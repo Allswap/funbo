@@ -6,11 +6,9 @@ import { Play, Loader2 } from 'lucide-react';
 export function Dashboard() {
   const [trades, setTrades] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
 
   const fetchTrades = async () => {
-    setLoading(true);
     try {
       const [tradesRes, networksRes] = await Promise.all([
         tradeService.getHistory(),
@@ -21,7 +19,6 @@ export function Dashboard() {
     } catch (err) {
       console.error("Failed to fetch data", err);
     } finally {
-      setLoading(false);
     }
   };
 

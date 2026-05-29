@@ -1,4 +1,4 @@
-const WORKER_URL = 'funbo.nobtx-io.workers.dev';
+const WORKER_URL = 'https://evm-trading-bot.<your-sub>.workers.dev';
 
 export async function onRequest(context: { request: Request; env: Record<string, string> }) {
   const url = new URL(context.request.url);
