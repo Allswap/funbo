@@ -217,7 +217,7 @@ export function ConfigManager() {
           <input type="number" step="0.1" value={config.mm_rebalance_threshold}
             onChange={e => handleChange('mm_rebalance_threshold', e.target.value)}
             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
-          <p className="text-xs text-gray-500 mt-1">Rebalance BroilerPlus LP if deviation > X%.</p>
+          <p className="text-xs text-gray-500 mt-1">Rebalance BroilerPlus LP if deviation &gt; X%.</p>
         </div>
       </div>
     </div>
