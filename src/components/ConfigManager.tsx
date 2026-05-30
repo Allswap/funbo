@@ -21,7 +21,8 @@ export function ConfigManager() {
     telegram_username: '',
     scan_interval_minutes: '5',
     default_fee_tier: '3000',
-    default_rpc_pool: '',
+    default_rpc_pool: 'https://mevblocker.io,https://flashbots.net',
+    blockscout_api_key: '',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,7 +102,7 @@ export function ConfigManager() {
           <p className="text-xs text-gray-400 mt-2">
             {isAutoScan ? `Bot scans every ${config.scan_interval_minutes || 5} minutes` : 'Manual mode — use Run Bot Scan on Dashboard'}
           </p>
-          {lastScan && <p className="text-xs text-gray-500 mt-1">Last scan: {new Date(lastScan).toLocaleString()}</p>}
+          {lastScan && <p className="text-xs text-gray-500 mt-1">Last scan: {(() => { try { return new Date(lastScan).toLocaleString(); } catch { return 'Invalid date'; } })()}</p>}
         </div>
 
         <div className="md:col-span-2 bg-darker p-4 rounded border border-danger/30">
@@ -230,14 +231,31 @@ export function ConfigManager() {
           <p className="text-xs text-gray-500 mt-1">Default V3 pool fee in hundredths of a basis point (500=0.05%, 3000=0.3%, 10000=1%).</p>
         </div>
 
-        <div className="md:col-span-2">
-          <label className="block text-sm text-gray-400 mb-2">RPC Protection Pool</label>
-          <input value={config.default_rpc_pool}
-            onChange={e => handleChange('default_rpc_pool', e.target.value)}
-            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
-          <p className="text-xs text-gray-500 mt-1">Comma-separated fallback endpoints. Tried in order for networks with only one RPC. e.g. <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code></p>
-        </div>
-      </div>
-    </div>
-  );
-}
+<div className="md:col-span-2">
+           <label className="block text-sm text-gray-400 mb-2">Default RPC Pool</label>
+           <input value={config.default_rpc_pool}
+             onChange={e => handleChange('default_rpc_pool', e.target.value)}
+             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
+           <p className="text-xs text-gray-500 mt-1">
+             MEV-protected defaults: <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code>.
+             Networks with single RPC auto-extend with these. Pool order: MEV-protected → custom pool → network RPC → public fallback.
+           </p>
+         </div>
+
+         <div className="md:col-span-2 bg-darker p-4 rounded border border-primary/30">
+           <h3 className="font-bold text-lg text-primary mb-3">Blockscout PRO API</h3>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div>
+               <label className="block text-sm text-gray-400 mb-2">API Key (optional)</label>
+               <input type="password" value={config.blockscout_api_key || ''}
+                 onChange={e => handleChange('blockscout_api_key', e.target.value)}
+                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
+                 placeholder="proapi_xxxxxxxx" />
+               <p className="text-xs text-gray-500 mt-1">Get your free API key at <a href="https://dev.blockscout.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dev.blockscout.com</a>. Enables PRO API access with higher rate limits.</p>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+   );
+ }

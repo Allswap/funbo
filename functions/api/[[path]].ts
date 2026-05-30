@@ -1,4 +1,4 @@
-const WORKER_URL = 'https://evm-trading-bot.<your-sub>.workers.dev';
+const WORKER_URL = 'https://funbo.<your-sub>.workers.dev';
 
 export async function onRequest(context: { request: Request; env: Record<string, string> }) {
   const url = new URL(context.request.url);
@@ -13,5 +13,13 @@ export async function onRequest(context: { request: Request; env: Record<string,
     body: context.request.method === 'GET' || context.request.method === 'HEAD' ? null : context.request.body,
   });
 
-  return fetch(proxy);
+  try {
+    const response = await fetch(proxy);
+    return response;
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: 'Proxy failed', details: error.message }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }

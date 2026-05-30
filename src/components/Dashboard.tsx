@@ -111,9 +111,9 @@ export function Dashboard() {
                 <td className="p-3">{t.chain_id}</td>
                 <td className="p-3">{t.strategy}</td>
                 <td className="p-3 font-mono text-xs">{t.token_a?.slice(0,6)}... → {t.token_b?.slice(0,6)}...</td>
-                <td className={`p-3 font-bold ${t.profit_pct > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {t.profit_pct}%
-                </td>
+<td className={`p-3 font-bold ${t.profit_pct > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                   {t.profit_pct != null ? t.profit_pct + '%' : '—'}
+                 </td>
                 <td className="p-3">
                   <span className={`px-2 py-1 rounded text-xs ${
                     t.status === 'success' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'

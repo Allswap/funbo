@@ -22,6 +22,8 @@ export const networkService = {
     api.delete(`/api/networks/${chainId}`),
   list: () =>
     api.get('/api/networks'),
+  getStats: (chainId: number, explorerUrl?: string) =>
+    api.get(`/api/networks/${chainId}/stats`, { params: { explorerUrl } }),
 };
 
 export const walletService = {
@@ -46,6 +48,8 @@ export const configService = {
     api.get(`/api/config/${key}`),
   getAll: () =>
     api.get('/api/config'),
+  setBlockscoutApiKey: (key: string) =>
+    api.post('/api/config', { key: 'blockscout_api_key', value: key }),
 };
 
 export const tradeService = {
@@ -67,8 +71,67 @@ export const routerService = {
     const params = chainId ? `?chainId=${chainId}` : '';
     return api.get(`/api/routers${params}`);
   },
+  update: (id: number, data: Partial<{ name: string; address: string; chainId: number; version: string; quoterAddress: string; feeTiers: string; isActive: boolean }>) =>
+    api.patch(`/api/routers/${id}`, data),
   remove: (id: number) =>
     api.delete(`/api/routers/${id}`),
+};
+
+export const rpcPoolService = {
+  add: (data: { chainId: number; url: string; priority?: number }) =>
+    api.post('/api/rpc-pools', data),
+  list: (chainId?: number) => {
+    const params = chainId ? `?chainId=${chainId}` : '';
+    return api.get(`/api/rpc-pools${params}`);
+  },
+  remove: (id: number) =>
+    api.delete(`/api/rpc-pools/${id}`),
+};
+
+export const strategyService = {
+  add: (data: { key: string; name: string; description?: string; params?: string }) =>
+    api.post('/api/strategies', data),
+  list: () =>
+    api.get('/api/strategies'),
+  remove: (key: string) =>
+    api.delete(`/api/strategies/${key}`),
+};
+
+export const aiService = {
+  add: (data: { name: string; provider: string; model: string; apiKeyRef?: string; params?: string; priority?: number; isActive?: boolean }) =>
+    api.post('/api/ai', data),
+  list: (provider?: string) => {
+    const params = provider ? `?provider=${provider}` : '';
+    return api.get(`/api/ai${params}`);
+  },
+  update: (id: number, data: Partial<{ name: string; provider: string; model: string; apiKeyRef: string; params: string; priority: number; isActive: boolean }>) =>
+    api.patch(`/api/ai/${id}`, data),
+  remove: (id: number) =>
+    api.delete(`/api/ai/${id}`),
+};
+
+export const securityService = {
+  add: (data: { name: string; provider: string; apiKeyRef?: string; params?: string; priority?: number; isActive?: boolean }) =>
+    api.post('/api/security', data),
+  list: (provider?: string) => {
+    const params = provider ? `?provider=${provider}` : '';
+    return api.get(`/api/security${params}`);
+  },
+  update: (id: number, data: Partial<{ name: string; provider: string; apiKeyRef: string; params: string; priority: number; isActive: boolean }>) =>
+    api.patch(`/api/security/${id}`, data),
+  remove: (id: number) =>
+    api.delete(`/api/security/${id}`),
+};
+
+export const tokenPairService = {
+  add: (data: { chainId: number; tokenA: string; tokenB: string; label?: string }) =>
+    api.post('/api/token-pairs', data),
+  list: (chainId?: number) => {
+    const params = chainId ? `?chainId=${chainId}` : '';
+    return api.get(`/api/token-pairs${params}`);
+  },
+  remove: (id: number) =>
+    api.delete(`/api/token-pairs/${id}`),
 };
 
 export const authService = {
