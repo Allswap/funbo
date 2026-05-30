@@ -20,6 +20,8 @@ export function ConfigManager() {
     notify_email_to: '',
     telegram_username: '',
     scan_interval_minutes: '5',
+    default_fee_tier: '3000',
+    default_rpc_pool: '',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -218,6 +220,22 @@ export function ConfigManager() {
             onChange={e => handleChange('mm_rebalance_threshold', e.target.value)}
             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
           <p className="text-xs text-gray-500 mt-1">Rebalance BroilerPlus LP if deviation &gt; X%.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">Default Fee Tier (V3)</label>
+          <input type="number" min="1" value={config.default_fee_tier}
+            onChange={e => handleChange('default_fee_tier', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
+          <p className="text-xs text-gray-500 mt-1">Default V3 pool fee in hundredths of a basis point (500=0.05%, 3000=0.3%, 10000=1%).</p>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-sm text-gray-400 mb-2">RPC Protection Pool</label>
+          <input value={config.default_rpc_pool}
+            onChange={e => handleChange('default_rpc_pool', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
+          <p className="text-xs text-gray-500 mt-1">Comma-separated fallback endpoints. Tried in order for networks with only one RPC. e.g. <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code></p>
         </div>
       </div>
     </div>

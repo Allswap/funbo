@@ -61,7 +61,7 @@ export const tradeService = {
 };
 
 export const routerService = {
-  add: (data: { name: string; address: string; chainId: number }) =>
+  add: (data: { name: string; address: string; chainId: number; version?: string; quoterAddress?: string; feeTiers?: string }) =>
     api.post('/api/routers', data),
   list: (chainId?: number) => {
     const params = chainId ? `?chainId=${chainId}` : '';
