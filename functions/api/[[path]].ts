@@ -1,4 +1,4 @@
-const WORKER_URL = 'https://funbo.<your-sub>.workers.dev';
+const WORKER_URL = 'https://funbo-9cr.pages.dev';
 
 export async function onRequest(context: { request: Request; env: Record<string, string> }) {
   const url = new URL(context.request.url);
