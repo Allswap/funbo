@@ -8,7 +8,7 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const apiKey = localStorage.getItem('dashboard_api_key');
+  const apiKey = sessionStorage.getItem('dashboard_api_key');
   if (apiKey) {
     config.headers['X-API-Key'] = apiKey;
   }
@@ -136,10 +136,10 @@ export const tokenPairService = {
 
 export const authService = {
   login: (apiKey: string) => {
-    localStorage.setItem('dashboard_api_key', apiKey);
+    sessionStorage.setItem('dashboard_api_key', apiKey);
     return Promise.resolve({ success: true });
   },
   logout: () => {
-    localStorage.removeItem('dashboard_api_key');
+    sessionStorage.removeItem('dashboard_api_key');
   },
 };

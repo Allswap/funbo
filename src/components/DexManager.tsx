@@ -5,7 +5,7 @@ import { Plus, Trash2, Loader2 } from 'lucide-react';
 export function DexManager() {
   const [routers, setRouters] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '' });
+  const [form, setForm] = useState({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '', poolId: '' });
 
   const fetchRouters = async () => {
     setLoading(true);
@@ -34,12 +34,15 @@ export function DexManager() {
         payload.quoterAddress = form.quoterAddress;
         payload.feeTiers = form.feeTiers || '3000';
       }
+      if (form.version === 'balancer') {
+        payload.feeTiers = form.poolId || ''; // Using fee_tiers field for poolId in Balancer
+      }
       await routerService.add(payload);
       alert('DEX Router Added!');
-      setForm({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '' });
+      setForm({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '', poolId: '' });
       fetchRouters();
-    } catch (err) {
-      alert('Failed to add router');
+    } catch (err: any) {
+      alert(`Failed to add router: ${err.response?.data?.error || err.message || 'Unknown error'}`);
     }
   };
 
@@ -60,15 +63,15 @@ export function DexManager() {
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <h3 className="text-lg font-semibold mb-4">Add DEX Router</h3>
         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input placeholder="Name (e.g. Uniswap V3)"
+          <input placeholder="Name (e.g. Uniswap V3, Balancer Vault)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
 
-          <div className="flex gap-2">
-            {['v2', 'v3'].map(v => (
-              <button key={v} type="button" onClick={() => setForm({ ...form, version: v, quoterAddress: '', feeTiers: '' })}
+<div className="flex gap-2">
+            {['v2', 'v3', 'balancer', 'universal'].map(v => (
+              <button key={v} type="button" onClick={() => setForm({ ...form, version: v, quoterAddress: '', feeTiers: '', poolId: '' })}
                 className={`flex-1 py-2 px-4 rounded font-bold text-sm transition-colors ${form.version === v ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
-                {v.toUpperCase()}
+                {v === 'balancer' ? 'BALANCER' : v === 'universal' ? 'UNIVERSAL' : v.toUpperCase()}
               </button>
             ))}
           </div>
@@ -86,10 +89,28 @@ export function DexManager() {
               <input placeholder="Quoter Address (0x...)"
                 className="p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
                 value={form.quoterAddress} onChange={e => setForm({ ...form, quoterAddress: e.target.value })} required />
-              <input placeholder="Fee Tiers (e.g. 500,3000,10000)"
+              <input placeholder="Fee Tiers (e.g. 500,3000 or 0.05,0.3,1.0)"
                 className="p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
                 value={form.feeTiers} onChange={e => setForm({ ...form, feeTiers: e.target.value })} />
+              <span className="text-xs text-purple-400 col-span-full">Accept decimal (0.05=500, 0.3=3000, 1.0=10000) or raw basis points</span>
             </>
+          )}
+
+          {form.version === 'balancer' && (
+            <>
+              <input placeholder="Pool ID (e.g. 0x...)"
+                className="p-3 bg-gray-800 rounded border border-orange-700 focus:border-orange-400 outline-none font-mono text-sm"
+                value={form.poolId} onChange={e => setForm({ ...form, poolId: e.target.value })} required />
+              <span className="text-xs text-orange-400 col-span-full">Balancer v2 uses Vault system. Pool ID is required (find on analytics.balancer.fi)</span>
+            </>
+          )}
+
+          {form.version === 'universal' && (
+            <span className="text-xs text-blue-400 col-span-full">Uniswap Universal Router - uses V2+V3 pools internally. No quoter needed.</span>
+          )}
+
+          {form.version === 'v2' && (
+            <span className="text-xs text-gray-500 col-span-full">Standard V2 router (Uniswap V2, SushiSwap, etc.)</span>
           )}
 
           <button type="submit"

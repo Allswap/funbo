@@ -66,7 +66,7 @@ function App() {
               Config
             </button>
             <button onClick={() => {
-              localStorage.removeItem('dashboard_api_key');
+              sessionStorage.removeItem('dashboard_api_key');
               setIsAuthenticated(false);
             }} className="px-3 py-2 rounded text-danger hover:bg-red-900/20 text-sm">
               Logout

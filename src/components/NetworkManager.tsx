@@ -33,8 +33,8 @@ export function NetworkManager() {
       alert('Network Added!');
       setForm({ chainId: '', name: '', rpcUrl: '', explorerUrl: '' });
       fetchNetworks();
-    } catch (err) {
-      alert('Failed to add network');
+    } catch (err: any) {
+      alert(`Failed to add network: ${err.response?.data?.error || err.message || 'Unknown error'}`);
     }
   };
 
