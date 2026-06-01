@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Wallet, Loader2, Shield, Lock, Eye, EyeOff } from 'lucide-react';
-import { BrowserProvider } from 'ethers';
+import { Wallet, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || 'bot123';
-const TEST_API_KEY = import.meta.env.VITE_TEST_API_KEY || 'dashboard2026';
+
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [apiKey, setApiKey] = useState('');
@@ -34,8 +38,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     const init = async () => {
       if (typeof window === 'undefined' || !window.ethereum) return;
       try {
-        const provider = new BrowserProvider(window.ethereum);
-        const accounts = await provider.send('eth_accounts', []);
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts.length > 0) {
           setAccount(accounts[0]);
           await fetchNonce(accounts[0]);
@@ -61,8 +64,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     setLoading(true);
     setError('');
     try {
-      const provider = new BrowserProvider(window.ethereum);
-      const accounts = await provider.send('eth_requestAccounts', []);
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       setAccount(accounts[0]);
       setMode('wallet');
       await fetchNonce(accounts[0]);
@@ -78,10 +80,11 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     setLoading(true);
     setError('');
     try {
-      const provider = new BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
       const message = `Authorize funbo dashboard\nNonce: ${nonce}`;
-      const sig = await signer.signMessage(message);
+      const sig = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [message, account],
+      });
       const res = await fetch(`${API_BASE}/api/auth/wallet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -247,7 +250,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
               <button type="button" onClick={signAndLogin} disabled={loading || !nonce}
                 className="w-full bg-primary hover:bg-blue-600 disabled:bg-gray-600 text-white font-bold py-3 rounded flex items-center justify-center gap-2">
                 {loading && <Loader2 className="animate-spin" size={20} />}
-                {loading ? 'Signing...' : signAndLogin}
+                {loading ? 'Signing...' : 'Sign Message'}
               </button>
             ) : (
               <button type="button" onClick={connectWallet} disabled={loading}
