@@ -33,6 +33,7 @@ export const walletService = {
     chainId: number;
     strategyType: string;
     minBalancePct: number;
+    maxBalancePct: number;
     minBalanceAmount: string
   }) => api.post('/api/wallets', data),
   list: () => api.get('/api/wallets'),

@@ -8,7 +8,7 @@ export function WalletManager() {
   const [form, setForm] = useState({
     label: '', address: '', chainId: '',
     strategyType: 'arb',
-    minBalancePct: '10', minBalanceAmount: '0.05'
+    minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05'
   });
 
   const fetchWallets = async () => {
@@ -33,10 +33,11 @@ export function WalletManager() {
         chainId: parseInt(form.chainId),
         strategyType: form.strategyType as 'arb' | 'mm' | 'yield',
         minBalancePct: parseFloat(form.minBalancePct),
+        maxBalancePct: parseFloat(form.maxBalancePct),
         minBalanceAmount: form.minBalanceAmount
       });
       alert('Wallet Added!');
-      setForm({ label: '', address: '', chainId: '', strategyType: 'arb', minBalancePct: '10', minBalanceAmount: '0.05' });
+      setForm({ label: '', address: '', chainId: '', strategyType: 'arb', minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05' });
       fetchWallets();
     } catch (err) {
       alert('Failed to add wallet');
@@ -77,6 +78,9 @@ export function WalletManager() {
           <input placeholder="Min Balance % (Safety)" type="number" step="0.1"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.minBalancePct} onChange={e => setForm({ ...form, minBalancePct: e.target.value })} />
+          <input placeholder="Max Balance % Per Trade (e.g., 50)" type="number" step="0.1"
+            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+            value={form.maxBalancePct} onChange={e => setForm({ ...form, maxBalancePct: e.target.value })} />
           <input placeholder="Min Fixed Amount (e.g., 0.05)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.minBalanceAmount} onChange={e => setForm({ ...form, minBalanceAmount: e.target.value })} />
@@ -125,7 +129,7 @@ export function WalletManager() {
                     </td>
                     <td className="p-3 font-mono text-sm">{w.chain_id}</td>
                     <td className="p-3 text-xs text-gray-400">
-                      Min: {w.min_balance_pct}% / {w.min_balance_amount}
+                      Min: {w.min_balance_pct}% / Max: {w.max_balance_pct || 50}% / Fixed: {w.min_balance_amount}
                     </td>
                     <td className="p-3">
                       {w.is_active ? (
