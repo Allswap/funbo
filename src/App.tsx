@@ -10,11 +10,12 @@ import { StrategyManager } from './components/StrategyManager';
 import { AiManager } from './components/AiManager';
 import { SecurityManager } from './components/SecurityManager';
 import { TokenPairManager } from './components/TokenPairManager';
+import { OpportunityManager } from './components/OpportunityManager';
 import { DiscoveryPoolManager } from './components/DiscoveryPoolManager';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'ai' | 'security' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'ai' | 'security' | 'config'>('dashboard');
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -85,6 +86,7 @@ function App() {
         {activeTab === 'networks' && <NetworkManager />}
         {activeTab === 'routers' && <DexManager />}
         {activeTab === 'rpc' && <RpcManager />}
+        {activeTab === 'opportunities' && <OpportunityManager />}
         {activeTab === 'discovery' && <DiscoveryPoolManager />}
         {activeTab === 'pairs' && <TokenPairManager />}
         {activeTab === 'wallets' && <WalletManager />}

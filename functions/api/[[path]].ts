@@ -1,25 +1,27 @@
 const WORKER_URL = 'https://funbo.nobtx-io.workers.dev';
 
-export async function onRequest(context: { request: Request; env: Record<string, string> }) {
-  const url = new URL(context.request.url);
-  const target = `${WORKER_URL}${url.pathname}${url.search}`;
+export default {
+  async fetch(request: Request, env: Record<string, string>, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    const targetUrl = `${WORKER_URL}${url.pathname}${url.search}`;
 
-  const headers = new Headers(context.request.headers);
-  headers.delete('host');
+    const headers = new Headers(request.headers);
+    headers.delete('host');
 
-  const proxy = new Request(target, {
-    method: context.request.method,
-    headers,
-    body: context.request.method === 'GET' || context.request.method === 'HEAD' ? null : context.request.body,
-  });
-
-  try {
-    const response = await fetch(proxy);
-    return response;
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: 'Proxy failed', details: error.message }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json' },
+    const proxy = new Request(targetUrl, {
+      method: request.method,
+      headers,
+      body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
     });
+
+    try {
+      const response = await fetch(proxy);
+      return response;
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: 'Proxy failed', details: error.message }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
   }
-}
+};
