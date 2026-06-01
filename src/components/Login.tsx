@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { authService } from '../api/client';
 import { Lock, Eye, EyeOff } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || window.location.origin;
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || 'bot123';
 const TEST_API_KEY = import.meta.env.VITE_TEST_API_KEY || 'dashboard2026';
 
@@ -12,49 +11,60 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'apikey' | 'password'>('apikey');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleApiKeyLogin = async () => {
+    setLoading(true);
+    setError('');
     try {
-      if (mode === 'apikey' && apiKey) {
-        try {
-          await authService.login(apiKey);
-          onLogin();
-        } catch (loginErr: any) {
-          if (loginErr.response?.status === 401 || loginErr.response?.status === 403) {
-            const setupRes = await fetch(`${API_BASE}/api/setup-key`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: 'auto-setup' })
-            });
-if (setupRes.ok) {
-               await authService.login(TEST_API_KEY);
-               onLogin();
-             } else {
-              setError('Invalid API key');
-            }
-          } else {
-            setError(loginErr.message || 'Login failed');
-          }
-        }
-      } else if (mode === 'password' && password) {
-        const res = await fetch(`${API_BASE}/api/login-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          await authService.login(data.apiKey);
-          onLogin();
-        } else {
-          setError('Wrong password');
-        }
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['X-API-Key'] = apiKey;
+      const res = await fetch(`${API_BASE}/api/config`, { headers });
+      if (res.ok) {
+        sessionStorage.setItem('dashboard_api_key', apiKey);
+        onLogin();
+        return;
+      }
+      throw new Error('Invalid API key');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/login-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        sessionStorage.setItem('dashboard_api_key', data.apiKey);
+        onLogin();
       } else {
-        setError('Please enter credentials');
+        setError('Wrong password');
       }
     } catch (err: any) {
       setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode === 'apikey') {
+      await handleApiKeyLogin();
+      if (error && apiKey) {
+        setMode('password');
+      }
+    } else {
+      await handlePasswordLogin();
     }
   };
 
@@ -65,7 +75,7 @@ if (setupRes.ok) {
           <Lock size={48} className="text-primary" />
         </div>
         <h2 className="text-2xl font-bold text-center mb-6">Private Bot Dashboard</h2>
-        
+
         <div className="flex gap-2 mb-4">
           <button type="button" onClick={() => setMode('apikey')}
             className={`flex-1 py-2 rounded font-bold text-sm ${mode === 'apikey' ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300'}`}>
@@ -78,8 +88,8 @@ if (setupRes.ok) {
         </div>
 
         {error && <p className="text-danger text-center mb-4">{error}</p>}
-        
-        <form onSubmit={handleLogin} className="space-y-4">
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'apikey' ? (
             <input placeholder="API Key"
               className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-sm"
@@ -95,9 +105,9 @@ if (setupRes.ok) {
               </button>
             </div>
           )}
-          <button type="submit"
-            className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded">
-            Unlock Dashboard
+          <button type="submit" disabled={loading}
+            className="w-full bg-primary hover:bg-blue-600 disabled:bg-gray-600 text-white font-bold py-3 rounded">
+            {loading ? 'Authenticating...' : 'Unlock Dashboard'}
           </button>
         </form>
         <p className="text-xs text-gray-500 text-center mt-4">
