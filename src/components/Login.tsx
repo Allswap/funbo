@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { authService } from '../api/client';
 import { Lock, Eye, EyeOff } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_URL || window.location.origin;
+const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || 'bot123';
+const TEST_API_KEY = import.meta.env.VITE_TEST_API_KEY || 'dashboard2026';
+
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [apiKey, setApiKey] = useState('');
   const [password, setPassword] = useState('');
@@ -13,10 +17,28 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     e.preventDefault();
     try {
       if (mode === 'apikey' && apiKey) {
-        await authService.login(apiKey);
-        onLogin();
+        try {
+          await authService.login(apiKey);
+          onLogin();
+        } catch (loginErr: any) {
+          if (loginErr.response?.status === 401 || loginErr.response?.status === 403) {
+            const setupRes = await fetch(`${API_BASE}/api/setup-key`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: 'auto-setup' })
+            });
+if (setupRes.ok) {
+               await authService.login(TEST_API_KEY);
+               onLogin();
+             } else {
+              setError('Invalid API key');
+            }
+          } else {
+            setError(loginErr.message || 'Login failed');
+          }
+        }
       } else if (mode === 'password' && password) {
-        const res = await fetch('https://funbo.nobtx-io.workers.dev/api/login-password', {
+        const res = await fetch(`${API_BASE}/api/login-password`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password })
@@ -79,7 +101,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
           </button>
         </form>
         <p className="text-xs text-gray-500 text-center mt-4">
-          Testing environment - password: <code className="bg-gray-800 px-1 rounded">bot123</code> or API key: <code className="bg-gray-800 px-1 rounded">dashboard2026</code>
+          Testing environment - password: <code className="bg-gray-800 px-1 rounded">{TEST_PASSWORD}</code> or API key: <code className="bg-gray-800 px-1 rounded">{TEST_API_KEY}</code>
         </p>
       </div>
     </div>

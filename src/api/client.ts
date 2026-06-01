@@ -134,6 +134,28 @@ export const tokenPairService = {
     api.delete(`/api/token-pairs/${id}`),
 };
 
+export const opportunityService = {
+  list: (chainId?: number, status?: string) => {
+    const params = new URLSearchParams();
+    if (chainId) params.append('chainId', chainId.toString());
+    if (status) params.append('status', status);
+    return api.get(`/api/opportunities?${params.toString()}`);
+  },
+};
+
+export const discoveryPoolService = {
+  add: (data: { chainId: number; apiUrl: string; apiKeyRef?: string; intervalMinutes?: number; sourceType: string; isActive?: boolean }) =>
+    api.post('/api/discovery-pools', data),
+  list: (chainId?: number, sourceType?: string) => {
+    const params = new URLSearchParams();
+    if (chainId) params.append('chainId', chainId.toString());
+    if (sourceType) params.append('sourceType', sourceType);
+    return api.get(`/api/discovery-pools?${params.toString()}`);
+  },
+  remove: (id: number) =>
+    api.delete(`/api/discovery-pools/${id}`),
+};
+
 export const authService = {
   login: (apiKey: string) => {
     sessionStorage.setItem('dashboard_api_key', apiKey);

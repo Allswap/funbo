@@ -23,6 +23,13 @@ export function ConfigManager() {
     default_fee_tier: '3000',
     default_rpc_pool: 'https://mevblocker.io,https://flashbots.net',
     blockscout_api_key: '',
+    system_api_key: 'dashboard2026',
+    default_password: 'bot123',
+    auto_discover_enabled: 'false',
+    auto_discover_source: 'gecko',
+    auto_discover_interval: '60',
+    executor_contract_address: '',
+    executor_mode: 'direct',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -242,20 +249,92 @@ export function ConfigManager() {
            </p>
          </div>
 
-         <div className="md:col-span-2 bg-darker p-4 rounded border border-primary/30">
-           <h3 className="font-bold text-lg text-primary mb-3">Blockscout PRO API</h3>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div>
-               <label className="block text-sm text-gray-400 mb-2">API Key (optional)</label>
-               <input type="password" value={config.blockscout_api_key || ''}
-                 onChange={e => handleChange('blockscout_api_key', e.target.value)}
-                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
-                 placeholder="proapi_xxxxxxxx" />
-               <p className="text-xs text-gray-500 mt-1">Get your free API key at <a href="https://dev.blockscout.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dev.blockscout.com</a>. Enables PRO API access with higher rate limits.</p>
-             </div>
-           </div>
-         </div>
-       </div>
+<div className="md:col-span-2 bg-darker p-4 rounded border border-primary/30">
+            <h3 className="font-bold text-lg text-primary mb-3">Blockscout PRO API</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">API Key (optional)</label>
+                <input type="password" value={config.blockscout_api_key || ''}
+                  onChange={e => handleChange('blockscout_api_key', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
+                  placeholder="proapi_xxxxxxxx" />
+                <p className="text-xs text-gray-500 mt-1">Get your free API key at <a href="https://dev.blockscout.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dev.blockscout.com</a>. Enables PRO API access with higher rate limits.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 bg-darker p-4 rounded border border-warning/30">
+            <h3 className="font-bold text-lg text-warning mb-3">System Credentials (for testing/setup)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Default API Key</label>
+                <input value={config.system_api_key || ''}
+                  onChange={e => handleChange('system_api_key', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
+                  placeholder="dashboard2026" />
+                <p className="text-xs text-gray-500 mt-1">Hardcoded fallback key used by /api/setup-key and /api/login-password. Change in production.</p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Default Password</label>
+                <input type="password" value={config.default_password || ''}
+                  onChange={e => handleChange('default_password', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
+                  placeholder="bot123" />
+                <p className="text-xs text-gray-500 mt-1">Password used for /api/login-password fallback. Change in production.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 bg-darker p-4 rounded border border-purple-900/50">
+            <h3 className="font-bold text-lg text-purple-400 mb-3">Executor & Auto-Discovery</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Executor Contract Address</label>
+                <input value={config.executor_contract_address || ''}
+                  onChange={e => handleChange('executor_contract_address', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none font-mono text-xs"
+                  placeholder="0x..." />
+                <p className="text-xs text-gray-500 mt-1">Smart contract for on-chain swap execution. Required for executor mode.</p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Executor Mode</label>
+<select value={config.executor_mode}
+                   onChange={e => handleChange('executor_mode', e.target.value)}
+                   className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
+                   <option value="direct">Direct (Worker signs tx)</option>
+                   <option value="contract">Contract (ArbExecutor.sol only)</option>
+                   <option value="become">Become (Try contract, fallback to direct)</option>
+                 </select>
+                 <p className="text-xs text-gray-500 mt-1">Switch between direct execution, contract-only, or try contract with fallback.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Auto-Discover</label>
+                <select value={config.auto_discover_source}
+                  onChange={e => handleChange('auto_discover_source', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
+                  <option value="gecko">Gecko Terminal</option>
+                  <option value="defillama">DefiLlama</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Interval (min)</label>
+                <input type="number" min="10" max="1440" value={config.auto_discover_interval}
+                  onChange={e => handleChange('auto_discover_interval', e.target.value)}
+                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none" />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={config.auto_discover_enabled === 'true'}
+                    onChange={e => handleChange('auto_discover_enabled', e.target.checked ? 'true' : 'false')}
+                    className="w-4 h-4" />
+                  Enabled
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
      </div>
    );
  }

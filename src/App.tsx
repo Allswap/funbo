@@ -10,10 +10,11 @@ import { StrategyManager } from './components/StrategyManager';
 import { AiManager } from './components/AiManager';
 import { SecurityManager } from './components/SecurityManager';
 import { TokenPairManager } from './components/TokenPairManager';
+import { DiscoveryPoolManager } from './components/DiscoveryPoolManager';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'pairs' | 'wallets' | 'strategies' | 'ai' | 'security' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'ai' | 'security' | 'config'>('dashboard');
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -40,6 +41,10 @@ function App() {
             <button onClick={() => setActiveTab('rpc')}
               className={`px-3 py-2 rounded text-sm ${activeTab === 'rpc' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               RPC Pools
+            </button>
+            <button onClick={() => setActiveTab('discovery')}
+              className={`px-3 py-2 rounded text-sm ${activeTab === 'discovery' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
+              Discovery Pools
             </button>
             <button onClick={() => setActiveTab('pairs')}
               className={`px-3 py-2 rounded text-sm ${activeTab === 'pairs' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
@@ -80,6 +85,7 @@ function App() {
         {activeTab === 'networks' && <NetworkManager />}
         {activeTab === 'routers' && <DexManager />}
         {activeTab === 'rpc' && <RpcManager />}
+        {activeTab === 'discovery' && <DiscoveryPoolManager />}
         {activeTab === 'pairs' && <TokenPairManager />}
         {activeTab === 'wallets' && <WalletManager />}
         {activeTab === 'strategies' && <StrategyManager />}
