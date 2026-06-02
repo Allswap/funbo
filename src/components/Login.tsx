@@ -48,16 +48,27 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     init();
   }, []);
 
+  const apiRequest = async (path: string, opts?: RequestInit) => {
+    const url = `${API_BASE}${path}`;
+    const res = await fetch(url, opts);
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 120)}... Is the worker URL correct?`);
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data;
+  };
+
   const fetchNonce = async (addr: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/nonce?address=${addr}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiRequest(`/api/auth/nonce?address=${addr}`);
       if (data.nonce) setNonce(data.nonce);
       else setError('No nonce in response');
     } catch (err: any) {
       console.error('fetchNonce error:', err);
-      setError(`Nonce fetch failed: ${err.message}`);
+      setError(err.message || 'Nonce fetch failed');
     }
   };
 
@@ -115,14 +126,9 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (apiKey.trim()) headers['X-API-Key'] = apiKey.trim();
-      const res = await fetch(`${API_BASE}/api/config`, { headers });
-      if (res.ok) {
-        sessionStorage.setItem('dashboard_api_key', apiKey.trim());
-        onLogin();
-        return;
-      }
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Invalid API key');
+      await apiRequest('/api/config', { headers });
+      sessionStorage.setItem('dashboard_api_key', apiKey.trim());
+      onLogin();
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
