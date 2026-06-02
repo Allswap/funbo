@@ -51,9 +51,14 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   const fetchNonce = async (addr: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/nonce?address=${addr}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.nonce) setNonce(data.nonce);
-    } catch {}
+      else setError('No nonce in response');
+    } catch (err: any) {
+      console.error('fetchNonce error:', err);
+      setError(`Nonce fetch failed: ${err.message}`);
+    }
   };
 
   const connectWallet = async () => {
@@ -151,7 +156,13 @@ export function Login({ onLogin }: { onLogin: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === 'wallet') await signAndLogin();
+    if (mode === 'wallet') {
+      if (!nonce) {
+        setError('Nonce not loaded yet. Connect wallet first.');
+        return;
+      }
+      await signAndLogin();
+    }
     else if (mode === 'password') await handlePasswordLogin();
     else if (mode === 'apikey') await handleApiKeyLogin();
   };
