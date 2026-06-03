@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Wallet, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || 'bot123';
 
 declare global {
