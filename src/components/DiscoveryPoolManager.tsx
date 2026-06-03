@@ -23,7 +23,13 @@ export function DiscoveryPoolManager() {
 
   const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchPools, POLL_HEAVY);
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleSourceTypeChange = (sourceType: string) => {
+    let apiUrl = '';
+    if (sourceType === 'gecko') apiUrl = 'https://api.geckoterminal.com';
+    else if (sourceType === 'defillama') apiUrl = 'https://pro-api.llama.fi';
+    else if (sourceType === 'dexscreener') apiUrl = 'https://api.dexscreener.com';
+    setForm(f => ({ ...f, sourceType, apiUrl }));
+  };
     e.preventDefault();
     try {
       await discoveryPoolService.add({
