@@ -1,24 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { opportunityService } from '../api/client';
-import { RefreshCw, Play, Loader2 } from 'lucide-react';
+import { RefreshCw, Play, Loader2, Power } from 'lucide-react';
+import { useAutoPoll } from '../hooks/useAutoPoll';
 
 export function OpportunityManager() {
   const [ops, setOps] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchOps = async () => {
-    setLoading(true);
     try {
       const res = await opportunityService.list(undefined, 'pending');
       setOps(res.data || []);
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchOps(); }, []);
+  const { loading: pollLoading, isPolling, refetch, togglePolling } = useAutoPoll(fetchOps, { interval: 20000 });
 
   const runExec = async () => {
     setLoading(true);
@@ -30,7 +28,7 @@ export function OpportunityManager() {
           'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '',
         },
       });
-      await fetchOps();
+      await refetch();
     } catch {
       alert('Execution failed');
     } finally {
@@ -43,12 +41,20 @@ export function OpportunityManager() {
       <h2 className="text-2xl font-bold">Opportunities</h2>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Pending Opportunities</h3>
           <div className="flex gap-2">
-            <button onClick={fetchOps}
-              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-              <RefreshCw size={18} /> Refresh
+            <button onClick={refetch}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {pollLoading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
             </button>
             <button onClick={runExec} disabled={loading || ops.length === 0}
               className="flex items-center gap-2 bg-success hover:bg-green-600 disabled:bg-gray-600 text-white font-bold py-2 px-4 rounded">

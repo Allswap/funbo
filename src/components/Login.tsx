@@ -38,19 +38,43 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     const init = async () => {
       if (typeof window === 'undefined' || !window.ethereum) return;
       try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const browserProvider = window.ethereum;
+        const providers = Array.isArray(browserProvider.providers) ? browserProvider.providers : [browserProvider];
+        const provider = providers[0];
+        const accounts = await provider.request({ method: 'eth_accounts' });
         if (accounts.length > 0) {
           setAccount(accounts[0]);
           await fetchNonce(accounts[0]);
         }
-      } catch {}
+      } catch (err) {
+        console.error('Wallet init error:', err);
+      }
     };
     init();
   }, []);
 
   const apiRequest = async (path: string, opts?: RequestInit) => {
     const url = `${API_BASE}${path}`;
-    const res = await fetch(url, opts);
+    console.log(`[Login] fetching ${url}`);
+    const res = await fetch(url, {
+      ...opts,
+      redirect: 'manual',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        ...(opts?.headers || {}),
+        'Accept': 'application/json',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+    });
+    console.log(`[Login] response status=${res.status} type=${res.headers.get('content-type')}`);
+    const location = res.headers.get('location');
+    if (location) console.log(`[Login] redirect to: ${location}`);
+    if (res.status === 0 || (location && (location.includes('/cdn-cgi') || location.includes('challenge')))) {
+      const text = await res.text();
+      throw new Error(`Blocked/redirected (HTTP ${res.status}) to: ${location || text.slice(0, 80)}. Is the worker URL correct?`);
+    }
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       const text = await res.text();

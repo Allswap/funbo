@@ -1,35 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { rpcPoolService, networkService } from '../api/client';
-import { Plus, Trash2, Loader2, RefreshCw, ShieldAlert, Activity } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, ShieldAlert, Activity, Power } from 'lucide-react';
 import type { NodeHealth } from '../api/types';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function RpcManager() {
   const [rpcPools, setRpcPools] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
   const [health, setHealth] = useState<NodeHealth[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ chainId: '', url: '', priority: '0' });
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchPools = async () => {
     try {
-      const [poolsRes, networksRes, healthRes] = await Promise.all([
+      const [poolsRes, networksRes] = await Promise.all([
         rpcPoolService.list(),
         networkService.list(),
-        fetch('/api/nodes/health', { headers: { 'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '' } }),
       ]);
-      const hd = healthRes.ok ? await healthRes.json() : [];
       setRpcPools(poolsRes.data);
       setNetworks(networksRes.data);
-      setHealth(Array.isArray(hd) ? hd : []);
     } catch (err) {
-      console.error("Failed to fetch data", err);
-    } finally {
-      setLoading(false);
+      console.error("Failed to fetch pools/networks", err);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch('/api/nodes/health', { headers: { 'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '' } });
+      const hd = res.ok ? await res.json() : [];
+      setHealth(Array.isArray(hd) ? hd : []);
+    } catch (err) {
+      console.error("Failed to fetch health", err);
+    }
+  };
+
+  const { loading: poolsLoading, isPolling: poolsPolling, refetch: refetchPools, togglePolling: togglePools } = useAutoPoll(fetchPools, POLL_HEAVY);
+  const { isPolling: healthPolling, refetch: refetchHealth, togglePolling: toggleHealth } = useAutoPoll(fetchHealth, { ...POLL_HEAVY, interval: 20000 });
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +46,7 @@ export function RpcManager() {
       });
       alert('RPC Pool Added!');
       setForm({ chainId: '', url: '', priority: '0' });
-      fetchData();
+      refetchPools();
     } catch (err) {
       alert('Failed to add RPC pool');
     }
@@ -51,7 +56,7 @@ export function RpcManager() {
     if (!confirm('Remove this RPC pool?')) return;
     try {
       await rpcPoolService.remove(id);
-      fetchData();
+      refetchPools();
     } catch (err) {
       alert('Failed to remove RPC pool');
     }
@@ -73,7 +78,7 @@ export function RpcManager() {
       const data = await res.json();
       if (data.success) alert(`Added ${data.added} of ${data.total} default endpoints.`);
       else alert(data.error || 'Failed to load presets');
-      fetchData();
+      refetchPools();
     } catch {
       alert('Failed to load presets');
     }
@@ -90,7 +95,7 @@ export function RpcManager() {
         },
         body: JSON.stringify({ chainId }),
       });
-      fetchData();
+      refetchHealth();
     } catch {
       alert('Health check failed');
     }
@@ -147,7 +152,18 @@ export function RpcManager() {
         </div>
 
         <div className="bg-dark p-6 rounded-lg border border-gray-800">
-          <h3 className="text-lg font-semibold mb-4">Monitor</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Monitor</h3>
+            <div className="flex gap-2">
+              <button onClick={toggleHealth}
+                className={`flex items-center gap-2 font-bold py-2 px-3 rounded text-sm ${
+                  healthPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}>
+                <Power size={16} />
+                {healthPolling ? 'Health Auto' : 'Health Manual'}
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <button onClick={handleCheckAll}
               className="flex items-center justify-center gap-2 bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded">
@@ -175,8 +191,24 @@ export function RpcManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">RPC Endpoints by Network</h3>
-        {loading ? (
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">RPC Endpoints by Network</h3>
+          <div className="flex gap-2">
+            <button onClick={refetchPools} disabled={poolsLoading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {poolsLoading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePools}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                poolsPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {poolsPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
+        {poolsLoading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
         ) : rpcPools.length === 0 ? (
           <div className="flex items-center gap-2 text-gray-500">

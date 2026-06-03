@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { configService, tradeService } from '../api/client';
-import { Save, AlertTriangle, Play, Pause } from 'lucide-react';
+import { Save, AlertTriangle, Play, Pause, RefreshCw, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function ConfigManager() {
   const [config, setConfig] = useState({
@@ -34,14 +35,15 @@ export function ConfigManager() {
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadConfig = async () => {
     const keys = Object.keys(config);
-    Promise.all([
-      ...keys.map(key =>
-        configService.get(key).then(res => ({ key, value: res.data.value }))
-      ),
-      tradeService.getStatus().then(res => ({ key: 'status', value: res.data })).catch(() => null),
-    ]).then(results => {
+    try {
+      const results = await Promise.all([
+        ...keys.map(key =>
+          configService.get(key).then(res => ({ key, value: res.data.value }))
+        ),
+        tradeService.getStatus().then(res => ({ key: 'status', value: res.data })).catch(() => null),
+      ]);
       const newConfig: any = {};
       results.forEach(r => {
         if (!r) return;
@@ -53,8 +55,14 @@ export function ConfigManager() {
         }
       });
       setConfig(prev => ({ ...prev, ...newConfig }));
-    });
-  }, []);
+    } catch (err) {
+      console.error("Failed to load config", err);
+    }
+  };
+
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(loadConfig, POLL_HEAVY);
+
+  useEffect(() => { loadConfig(); }, []);
 
   const handleChange = (key: string, value: string) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -67,6 +75,7 @@ export function ConfigManager() {
         Object.entries(config).map(([key, value]) => configService.set(key, value))
       );
       alert('Configuration saved!');
+      await refetch();
     } catch (err) {
       alert('Failed to save configuration');
     } finally {
@@ -80,10 +89,24 @@ export function ConfigManager() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Bot Safety & Config</h2>
-        <button onClick={handleSave} disabled={saving}
-          className="bg-success hover:bg-green-600 text-white font-bold py-2 px-6 rounded flex items-center gap-2">
-          <Save size={18} /> {saving ? 'Saving...' : 'Save Changes'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={togglePolling}
+            className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+              isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            }`}>
+            <Power size={18} />
+            {isPolling ? 'Auto Reload ON' : 'Auto Reload OFF'}
+          </button>
+          <button onClick={refetch} disabled={loading}
+            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+            {loading ? <RefreshCw className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+            Reload Config
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="bg-success hover:bg-green-600 text-white font-bold py-2 px-6 rounded flex items-center gap-2">
+            <Save size={18} /> {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -238,103 +261,103 @@ export function ConfigManager() {
           <p className="text-xs text-gray-500 mt-1">Default V3 pool fee in hundredths of a basis point (500=0.05%, 3000=0.3%, 10000=1%).</p>
         </div>
 
-<div className="md:col-span-2">
-           <label className="block text-sm text-gray-400 mb-2">Default RPC Pool</label>
-           <input value={config.default_rpc_pool}
-             onChange={e => handleChange('default_rpc_pool', e.target.value)}
-             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
-           <p className="text-xs text-gray-500 mt-1">
-             MEV-protected defaults: <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code>.
-             Networks with single RPC auto-extend with these. Pool order: MEV-protected → custom pool → network RPC → public fallback.
-           </p>
-         </div>
+        <div className="md:col-span-2">
+          <label className="block text-sm text-gray-400 mb-2">Default RPC Pool</label>
+          <input value={config.default_rpc_pool}
+            onChange={e => handleChange('default_rpc_pool', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
+          <p className="text-xs text-gray-500 mt-1">
+            MEV-protected defaults: <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code>.
+            Networks with single RPC auto-extend with these. Pool order: MEV-protected → custom pool → network RPC → public fallback.
+          </p>
+        </div>
 
-<div className="md:col-span-2 bg-darker p-4 rounded border border-primary/30">
-            <h3 className="font-bold text-lg text-primary mb-3">Blockscout PRO API</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">API Key (optional)</label>
-                <input type="password" value={config.blockscout_api_key || ''}
-                  onChange={e => handleChange('blockscout_api_key', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
-                  placeholder="proapi_xxxxxxxx" />
-                <p className="text-xs text-gray-500 mt-1">Get your free API key at <a href="https://dev.blockscout.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dev.blockscout.com</a>. Enables PRO API access with higher rate limits.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-2 bg-darker p-4 rounded border border-warning/30">
-            <h3 className="font-bold text-lg text-warning mb-3">System Credentials (for testing/setup)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Default API Key</label>
-                <input value={config.system_api_key || ''}
-                  onChange={e => handleChange('system_api_key', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
-                  placeholder="dashboard2026" />
-                <p className="text-xs text-gray-500 mt-1">Hardcoded fallback key used by /api/setup-key and /api/login-password. Change in production.</p>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Default Password</label>
-                <input type="password" value={config.default_password || ''}
-                  onChange={e => handleChange('default_password', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
-                  placeholder="bot123" />
-                <p className="text-xs text-gray-500 mt-1">Password used for /api/login-password fallback. Change in production.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-2 bg-darker p-4 rounded border border-purple-900/50">
-            <h3 className="font-bold text-lg text-purple-400 mb-3">Executor & Auto-Discovery</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Executor Contract Address</label>
-                <input value={config.executor_contract_address || ''}
-                  onChange={e => handleChange('executor_contract_address', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none font-mono text-xs"
-                  placeholder="0x..." />
-                <p className="text-xs text-gray-500 mt-1">Smart contract for on-chain swap execution. Required for executor mode.</p>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Executor Mode</label>
-<select value={config.executor_mode}
-                   onChange={e => handleChange('executor_mode', e.target.value)}
-                   className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
-                   <option value="direct">Direct (Worker signs tx)</option>
-                   <option value="contract">Contract (ArbExecutor.sol only)</option>
-                   <option value="become">Become (Try contract, fallback to direct)</option>
-                 </select>
-                 <p className="text-xs text-gray-500 mt-1">Switch between direct execution, contract-only, or try contract with fallback.</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Auto-Discover</label>
-                <select value={config.auto_discover_source}
-                  onChange={e => handleChange('auto_discover_source', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
-                  <option value="gecko">Gecko Terminal</option>
-                  <option value="defillama">DefiLlama</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Interval (min)</label>
-                <input type="number" min="10" max="1440" value={config.auto_discover_interval}
-                  onChange={e => handleChange('auto_discover_interval', e.target.value)}
-                  className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none" />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={config.auto_discover_enabled === 'true'}
-                    onChange={e => handleChange('auto_discover_enabled', e.target.checked ? 'true' : 'false')}
-                    className="w-4 h-4" />
-                  Enabled
-                </label>
-              </div>
+        <div className="md:col-span-2 bg-darker p-4 rounded border border-primary/30">
+          <h3 className="font-bold text-lg text-primary mb-3">Blockscout PRO API</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">API Key (optional)</label>
+              <input type="password" value={config.blockscout_api_key || ''}
+                onChange={e => handleChange('blockscout_api_key', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
+                placeholder="proapi_xxxxxxxx" />
+              <p className="text-xs text-gray-500 mt-1">Get your free API key at <a href="https://dev.blockscout.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dev.blockscout.com</a>. Enables PRO API access with higher rate limits.</p>
             </div>
           </div>
         </div>
-     </div>
-   );
- }
+
+        <div className="md:col-span-2 bg-darker p-4 rounded border border-warning/30">
+          <h3 className="font-bold text-lg text-warning mb-3">System Credentials (for testing/setup)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Default API Key</label>
+              <input value={config.system_api_key || ''}
+                onChange={e => handleChange('system_api_key', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
+                placeholder="dashboard2026" />
+              <p className="text-xs text-gray-500 mt-1">Hardcoded fallback key used by /api/setup-key and /api/login-password. Change in production.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Default Password</label>
+              <input type="password" value={config.default_password || ''}
+                onChange={e => handleChange('default_password', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
+                placeholder="bot123" />
+              <p className="text-xs text-gray-500 mt-1">Password used for /api/login-password fallback. Change in production.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-2 bg-darker p-4 rounded border border-purple-900/50">
+          <h3 className="font-bold text-lg text-purple-400 mb-3">Executor & Auto-Discovery</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Executor Contract Address</label>
+              <input value={config.executor_contract_address || ''}
+                onChange={e => handleChange('executor_contract_address', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none font-mono text-xs"
+                placeholder="0x..." />
+              <p className="text-xs text-gray-500 mt-1">Smart contract for on-chain swap execution. Required for executor mode.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Executor Mode</label>
+              <select value={config.executor_mode}
+                onChange={e => handleChange('executor_mode', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
+                <option value="direct">Direct (Worker signs tx)</option>
+                <option value="contract">Contract (ArbExecutor.sol only)</option>
+                <option value="become">Become (Try contract, fallback to direct)</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Switch between direct execution, contract-only, or try contract with fallback.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Auto-Discover</label>
+              <select value={config.auto_discover_source}
+                onChange={e => handleChange('auto_discover_source', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
+                <option value="gecko">Gecko Terminal</option>
+                <option value="defillama">DefiLlama</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Interval (min)</label>
+              <input type="number" min="10" max="1440" value={config.auto_discover_interval}
+                onChange={e => handleChange('auto_discover_interval', e.target.value)}
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none" />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={config.auto_discover_enabled === 'true'}
+                  onChange={e => handleChange('auto_discover_enabled', e.target.checked ? 'true' : 'false')}
+                  className="w-4 h-4" />
+                Enabled
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

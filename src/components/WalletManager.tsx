@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { walletService } from '../api/client';
-import { Plus, Activity } from 'lucide-react';
+import { Plus, RefreshCw, Power, Loader2, Activity } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function WalletManager() {
   const [wallets, setWallets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     label: '', address: '', chainId: '',
     strategyType: 'arb',
@@ -12,18 +12,15 @@ export function WalletManager() {
   });
 
   const fetchWallets = async () => {
-    setLoading(true);
     try {
       const res = await walletService.list();
       setWallets(res.data);
     } catch (err) {
       console.error("Failed to fetch wallets", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchWallets(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchWallets, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +35,7 @@ export function WalletManager() {
       });
       alert('Wallet Added!');
       setForm({ label: '', address: '', chainId: '', strategyType: 'arb', minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05' });
-      fetchWallets();
+      refetch();
     } catch (err) {
       alert('Failed to add wallet');
     }
@@ -47,7 +44,7 @@ export function WalletManager() {
   const toggleActive = async (id: number, current: boolean) => {
     try {
       await walletService.activate(id, !current);
-      fetchWallets();
+      refetch();
     } catch (err) {
       alert('Failed to update wallet');
     }
@@ -92,9 +89,25 @@ export function WalletManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">Active Strategy Wallets</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Active Strategy Wallets</h3>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {loading ? <Activity className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
         {loading ? (
-          <div className="flex justify-center text-primary"><Activity className="animate-spin" /></div>
+          <div className="flex justify-center text-primary"><Loader2 className="animate-spin" size={24} /></div>
         ) : wallets.length === 0 ? (
           <p className="text-gray-500">No wallets configured.</p>
         ) : (

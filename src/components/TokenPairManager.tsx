@@ -1,15 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { tokenPairService, networkService } from '../api/client';
-import { Plus, Trash2, Loader2, Repeat } from 'lucide-react';
+import { Plus, Trash2, Loader2, Repeat, RefreshCw, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function TokenPairManager() {
   const [pairs, setPairs] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ chainId: '', tokenA: '', tokenB: '', label: '' });
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       const [pairsRes, networksRes] = await Promise.all([
         tokenPairService.list(),
@@ -19,12 +18,10 @@ export function TokenPairManager() {
       setNetworks(networksRes.data);
     } catch (err) {
       console.error("Failed to fetch data", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchData, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +34,7 @@ export function TokenPairManager() {
       });
       alert('Token Pair Added!');
       setForm({ chainId: '', tokenA: '', tokenB: '', label: '' });
-      fetchData();
+      refetch();
     } catch (err) {
       alert('Failed to add token pair');
     }
@@ -47,7 +44,7 @@ export function TokenPairManager() {
     if (!confirm('Remove this token pair?')) return;
     try {
       await tokenPairService.remove(id);
-      fetchData();
+      refetch();
     } catch (err) {
       alert('Failed to remove token pair');
     }
@@ -88,7 +85,23 @@ export function TokenPairManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">Configured Pairs</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Configured Pairs</h3>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
         {loading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
         ) : pairs.length === 0 ? (

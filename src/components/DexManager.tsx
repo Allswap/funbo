@@ -1,25 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { routerService } from '../api/client';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function DexManager() {
   const [routers, setRouters] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '', poolId: '' });
 
   const fetchRouters = async () => {
-    setLoading(true);
     try {
       const res = await routerService.list();
       setRouters(res.data);
     } catch (err) {
       console.error("Failed to fetch routers", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchRouters(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchRouters, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,12 +32,12 @@ export function DexManager() {
         payload.feeTiers = form.feeTiers || '3000';
       }
       if (form.version === 'balancer') {
-        payload.feeTiers = form.poolId || ''; // Using fee_tiers field for poolId in Balancer
+        payload.feeTiers = form.poolId || '';
       }
       await routerService.add(payload);
       alert('DEX Router Added!');
       setForm({ name: '', address: '', chainId: '', version: 'v2', quoterAddress: '', feeTiers: '', poolId: '' });
-      fetchRouters();
+      refetch();
     } catch (err: any) {
       alert(`Failed to add router: ${err.response?.data?.error || err.message || 'Unknown error'}`);
     }
@@ -50,7 +47,7 @@ export function DexManager() {
     if (!confirm('Remove this DEX router?')) return;
     try {
       await routerService.remove(id);
-      fetchRouters();
+      refetch();
     } catch (err) {
       alert('Failed to remove router');
     }
@@ -67,7 +64,7 @@ export function DexManager() {
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
 
-<div className="flex gap-2">
+          <div className="flex gap-2">
             {['v2', 'v3', 'balancer', 'universal'].map(v => (
               <button key={v} type="button" onClick={() => setForm({ ...form, version: v, quoterAddress: '', feeTiers: '', poolId: '' })}
                 className={`flex-1 py-2 px-4 rounded font-bold text-sm transition-colors ${form.version === v ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
@@ -121,7 +118,23 @@ export function DexManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">Configured Routers</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Configured Routers</h3>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
         {loading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
         ) : routers.length === 0 ? (

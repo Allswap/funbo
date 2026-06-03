@@ -1,25 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { securityService } from '../api/client';
-import { Plus, Trash2, Loader2, Shield } from 'lucide-react';
+import { Plus, Trash2, Loader2, Shield, RefreshCw, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function SecurityManager() {
   const [layers, setLayers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: '', provider: 'goplus', priority: '0' });
 
   const fetchLayers = async () => {
-    setLoading(true);
     try {
       const res = await securityService.list();
       setLayers(res.data);
     } catch (err) {
       console.error("Failed to fetch security layers", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchLayers(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchLayers, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +28,7 @@ export function SecurityManager() {
       });
       alert('Security Layer Added!');
       setForm({ name: '', provider: 'goplus', priority: '0' });
-      fetchLayers();
+      refetch();
     } catch (err) {
       alert('Failed to add security layer');
     }
@@ -41,7 +38,7 @@ export function SecurityManager() {
     if (!confirm('Remove this security layer?')) return;
     try {
       await securityService.remove(id);
-      fetchLayers();
+      refetch();
     } catch (err) {
       alert('Failed to remove security layer');
     }
@@ -79,7 +76,23 @@ export function SecurityManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">Security Providers</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Security Providers</h3>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
         {loading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
         ) : layers.length === 0 ? (

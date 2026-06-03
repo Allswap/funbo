@@ -1,25 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { networkService } from '../api/client';
-import { Plus, Trash2, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Loader2, CheckCircle, XCircle, RefreshCw, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function NetworkManager() {
   const [networks, setNetworks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ chainId: '', name: '', rpcUrl: '', explorerUrl: '' });
 
   const fetchNetworks = async () => {
-    setLoading(true);
     try {
       const res = await networkService.list();
       setNetworks(res.data);
     } catch (err) {
       console.error("Failed to fetch networks", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchNetworks(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchNetworks, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +29,7 @@ export function NetworkManager() {
       });
       alert('Network Added!');
       setForm({ chainId: '', name: '', rpcUrl: '', explorerUrl: '' });
-      fetchNetworks();
+      refetch();
     } catch (err: any) {
       alert(`Failed to add network: ${err.response?.data?.error || err.message || 'Unknown error'}`);
     }
@@ -42,7 +39,7 @@ export function NetworkManager() {
     if (!confirm('Deactivate this network?')) return;
     try {
       await networkService.remove(chainId);
-      fetchNetworks();
+      refetch();
     } catch (err) {
       alert('Failed to remove network');
     }
@@ -75,7 +72,23 @@ export function NetworkManager() {
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
-        <h3 className="text-lg font-semibold mb-4">Active Networks</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Active Networks</h3>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50">
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+              Manual Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded ${
+                isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}>
+              <Power size={18} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
+        </div>
         {loading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
         ) : networks.length === 0 ? (
