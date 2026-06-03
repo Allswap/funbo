@@ -87,6 +87,20 @@ export const rpcPoolService = {
   },
   remove: (id: number) =>
     api.delete(`/api/rpc-pools/${id}`),
+  preset: (chainId: number) =>
+    api.post('/api/nodes/preset', { chainId }),
+  check: (chainId: number) =>
+    api.post('/api/nodes/check', { chainId }),
+};
+
+export const nodeService = {
+  health: () => api.get('/api/nodes/health'),
+  recommendedPool: (chainId: number) =>
+    api.get(`/api/nodes/recommended-pool?chainId=${chainId}`),
+};
+
+export const quotaService = {
+  adjust: () => api.post('/api/quotas/adjust'),
 };
 
 export const strategyService = {

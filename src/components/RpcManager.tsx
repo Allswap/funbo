@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { rpcPoolService, networkService } from '../api/client';
+import { rpcPoolService, networkService, quotaService, api } from '../api/client';
 import { Plus, Trash2, Loader2, RefreshCw, ShieldAlert, Activity, Power } from 'lucide-react';
 import type { NodeHealth } from '../api/types';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
@@ -25,9 +25,9 @@ export function RpcManager() {
 
   const fetchHealth = async () => {
     try {
-      const res = await fetch('/api/nodes/health', { headers: { 'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '' } });
-      const hd = res.ok ? await res.json() : [];
-      setHealth(Array.isArray(hd) ? hd : []);
+      const res = await api.get('/api/nodes/health');
+      const hd = Array.isArray(res.data) ? res.data : [];
+      setHealth(hd);
     } catch (err) {
       console.error("Failed to fetch health", err);
     }
@@ -67,15 +67,7 @@ export function RpcManager() {
     if (!chainId) return alert('Select a chain first');
     if (!confirm('Add default multichain RPC pool for this chain?')) return;
     try {
-      const res = await fetch('/api/nodes/preset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '',
-        },
-        body: JSON.stringify({ chainId }),
-      });
-      const data = await res.json();
+      const { data } = await rpcPoolService.preset(chainId);
       if (data.success) alert(`Added ${data.added} of ${data.total} default endpoints.`);
       else alert(data.error || 'Failed to load presets');
       refetchPools();
@@ -87,14 +79,7 @@ export function RpcManager() {
   const handleCheckAll = async () => {
     const chainId = parseInt(form.chainId) || 137;
     try {
-      await fetch('/api/nodes/check', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '',
-        },
-        body: JSON.stringify({ chainId }),
-      });
+      await rpcPoolService.check(chainId);
       refetchHealth();
     } catch {
       alert('Health check failed');
@@ -103,12 +88,7 @@ export function RpcManager() {
 
   const handleAutoAdjust = async () => {
     try {
-      await fetch('/api/quotas/adjust', {
-        method: 'POST',
-        headers: {
-          'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '',
-        },
-      });
+      await quotaService.adjust();
       alert('Quotas auto-adjusted');
     } catch {
       alert('Failed to adjust quotas');

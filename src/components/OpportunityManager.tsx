@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { opportunityService } from '../api/client';
+import { opportunityService, tradeService } from '../api/client';
 import { RefreshCw, Play, Loader2, Power } from 'lucide-react';
 import { useAutoPoll } from '../hooks/useAutoPoll';
 
@@ -21,13 +21,7 @@ export function OpportunityManager() {
   const runExec = async () => {
     setLoading(true);
     try {
-      await fetch('/api/bot/run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': sessionStorage.getItem('dashboard_api_key') || '',
-        },
-      });
+      await tradeService.runBot();
       await refetch();
     } catch {
       alert('Execution failed');
