@@ -22,7 +22,7 @@ export function ConfigManager() {
     telegram_username: '',
     scan_interval_minutes: '5',
     default_fee_tier: '3000',
-    default_rpc_pool: 'https://mevblocker.io,https://flashbots.net',
+    protected_rpc_pool: 'https://mevblocker.io,https://flashbots.net',
     blockscout_api_key: '',
     system_api_key: 'dashboard2026',
     default_password: 'bot123',
@@ -262,13 +262,13 @@ export function ConfigManager() {
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-sm text-gray-400 mb-2">Default RPC Pool</label>
-          <input value={config.default_rpc_pool}
-            onChange={e => handleChange('default_rpc_pool', e.target.value)}
+          <label className="block text-sm text-gray-400 mb-2">Protected RPC Pool</label>
+          <input value={config.protected_rpc_pool}
+            onChange={e => handleChange('protected_rpc_pool', e.target.value)}
             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs" />
           <p className="text-xs text-gray-500 mt-1">
-            MEV-protected defaults: <code className="bg-gray-800 px-1 rounded">https://mevblocker.io,https://flashbots.net</code>.
-            Networks with single RPC auto-extend with these. Pool order: MEV-protected → custom pool → network RPC → public fallback.
+            Protected/MEV-safe RPCs tried first for every chain. Comma-separated.
+            Pool priority: protected RPCs → explicit URL → per-chain pools → hardcoded defaults → API providers.
           </p>
         </div>
 
@@ -339,6 +339,7 @@ export function ConfigManager() {
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
                 <option value="gecko">Gecko Terminal</option>
                 <option value="defillama">DefiLlama</option>
+                <option value="dexscreener">DexScreener</option>
               </select>
             </div>
             <div>

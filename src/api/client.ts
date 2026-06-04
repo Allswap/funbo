@@ -1,11 +1,17 @@
 import axios from 'axios';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const DISCOVERY_URL = (import.meta.env.VITE_DISCOVERY_URL || '').replace(/\/$/, '');
 
 export const api = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 });
+
+const discoveryApi = DISCOVERY_URL ? axios.create({
+  baseURL: DISCOVERY_URL,
+  headers: { 'Content-Type': 'application/json' },
+}) : null;
 
 api.interceptors.request.use((config) => {
   const apiKey = sessionStorage.getItem('dashboard_api_key');
@@ -139,12 +145,14 @@ export const securityService = {
 };
 
 export const tokenPairService = {
-  add: (data: { chainId: number; tokenA: string; tokenB: string; label?: string }) =>
+  add: (data: { chainId: number; tokenA: string; tokenB: string; label?: string; dexLabel?: string }) =>
     api.post('/api/token-pairs', data),
   list: (chainId?: number) => {
     const params = chainId ? `?chainId=${chainId}` : '';
     return api.get(`/api/token-pairs${params}`);
   },
+  update: (id: number, data: Partial<{ label: string; dexLabel: string; isActive: boolean }>) =>
+    api.patch(`/api/token-pairs/${id}`, data),
   remove: (id: number) =>
     api.delete(`/api/token-pairs/${id}`),
 };
@@ -169,6 +177,10 @@ export const discoveryPoolService = {
   },
   remove: (id: number) =>
     api.delete(`/api/discovery-pools/${id}`),
+  runDiscovery: (data: { chainId?: number; sourceType?: string }) => {
+    if (discoveryApi) return discoveryApi.post('/api/discovery/run', data);
+    return Promise.reject(new Error('VITE_DISCOVERY_URL not set — configure it to use Run Discovery'));
+  },
 };
 
 export const authService = {

@@ -30,6 +30,8 @@ export function DiscoveryPoolManager() {
     else if (sourceType === 'dexscreener') apiUrl = 'https://api.dexscreener.com';
     setForm(f => ({ ...f, sourceType, apiUrl }));
   };
+
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await discoveryPoolService.add({
@@ -75,10 +77,11 @@ export function DiscoveryPoolManager() {
           </select>
           <select
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.sourceType} onChange={e => setForm({ ...form, sourceType: e.target.value })}
+            value={form.sourceType} onChange={e => handleSourceTypeChange(e.target.value)}
           >
             <option value="gecko">Gecko Terminal</option>
             <option value="defillama">DefiLlama</option>
+            <option value="dexscreener">DexScreener</option>
             <option value="onchain">On-Chain (coming soon)</option>
           </select>
           <input placeholder="API URL (auto-filled)"
