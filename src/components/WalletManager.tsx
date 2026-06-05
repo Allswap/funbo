@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { walletService } from '../api/client';
+import { walletService, strategyService } from '../api/client';
 import { Plus, RefreshCw, Power, Loader2, Activity } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function WalletManager() {
   const [wallets, setWallets] = useState<any[]>([]);
+  const [strategies, setStrategies] = useState<any[]>([]);
   const [form, setForm] = useState({
     label: '', address: '', chainId: '',
-    strategyType: 'arb',
+    strategyType: '',
     minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05'
   });
 
@@ -17,6 +18,12 @@ export function WalletManager() {
       setWallets(res.data);
     } catch (err) {
       console.error("Failed to fetch wallets", err);
+    }
+    try {
+      const res = await strategyService.list();
+      setStrategies(res.data);
+    } catch (err) {
+      console.error("Failed to fetch strategies", err);
     }
   };
 
@@ -28,13 +35,13 @@ export function WalletManager() {
       await walletService.add({
         label: form.label, address: form.address,
         chainId: parseInt(form.chainId),
-        strategyType: form.strategyType as 'arb' | 'mm' | 'yield',
+        strategyType: form.strategyType,
         minBalancePct: parseFloat(form.minBalancePct),
         maxBalancePct: parseFloat(form.maxBalancePct),
         minBalanceAmount: form.minBalanceAmount
       });
       alert('Wallet Added!');
-      setForm({ label: '', address: '', chainId: '', strategyType: 'arb', minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05' });
+      setForm({ label: '', address: '', chainId: '', strategyType: '', minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05' });
       refetch();
     } catch (err) {
       alert('Failed to add wallet');
@@ -67,10 +74,11 @@ export function WalletManager() {
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required />
           <select className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.strategyType} onChange={e => setForm({ ...form, strategyType: e.target.value })}>
-            <option value="arb">Arbitrage (High Risk/High Reward)</option>
-            <option value="mm">Market Making (BroilerPlus LP)</option>
-            <option value="yield">Yield Farming (hNOBT Staking)</option>
+            value={form.strategyType} onChange={e => setForm({ ...form, strategyType: e.target.value })} required>
+            <option value="">Select Strategy</option>
+            {strategies.map((s: any) => (
+              <option key={s.key} value={s.key}>{s.name}</option>
+            ))}
           </select>
           <input placeholder="Min Balance % (Safety)" type="number" step="0.1"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"

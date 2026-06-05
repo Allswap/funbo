@@ -44,8 +44,9 @@ export function DiscoveryPoolManager() {
       alert('Discovery Pool Added!');
       setForm({ chainId: '', apiUrl: '', apiKeyRef: '', intervalMinutes: '60', sourceType: 'gecko' });
       refetch();
-    } catch (err) {
-      alert('Failed to add discovery pool');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Unknown error';
+      alert(`Failed to add discovery pool: ${msg}`);
     }
   };
 

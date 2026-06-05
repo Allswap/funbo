@@ -31,8 +31,9 @@ export function Dashboard() {
       await tradeService.runBot();
       await fetchTrades();
       alert("Bot scan complete. Check logs below.");
-    } catch (err) {
-      alert("Bot scan failed. Check console.");
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Unknown error';
+      alert(`Bot scan failed: ${msg}`);
     } finally {
       setRunning(false);
     }

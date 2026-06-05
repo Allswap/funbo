@@ -6,13 +6,16 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 export function StrategyManager() {
   const [strategies, setStrategies] = useState<any[]>([]);
   const [form, setForm] = useState({ key: '', name: '', description: '', params: '{}' });
+  const [error, setError] = useState<string | null>(null);
 
   const fetchStrategies = async () => {
+    setError(null);
     try {
       const res = await strategyService.list();
       setStrategies(res.data);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch strategies", err);
+      setError(err?.response?.data?.error || err?.message || 'Failed to load strategies');
     }
   };
 
@@ -91,9 +94,14 @@ export function StrategyManager() {
             </button>
           </div>
         </div>
+        {error && (
+          <div className="text-red-400 text-sm mb-4 p-3 bg-red-900/20 rounded border border-red-800">
+            {error}
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
-        ) : strategies.length === 0 ? (
+        ) : !error && strategies.length === 0 ? (
           <p className="text-gray-500">No strategies configured. Add strategies for trading.</p>
         ) : (
           <div className="overflow-x-auto">
