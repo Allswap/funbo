@@ -12,10 +12,11 @@ import { SecurityManager } from './components/SecurityManager';
 import { TokenPairManager } from './components/TokenPairManager';
 import { OpportunityManager } from './components/OpportunityManager';
 import { DiscoveryPoolManager } from './components/DiscoveryPoolManager';
+import { SpotStrategyManager } from './components/SpotStrategyManager';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'ai' | 'security' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'ai' | 'security' | 'config'>('dashboard');
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -59,6 +60,10 @@ function App() {
               className={`px-3 py-2 rounded text-sm ${activeTab === 'strategies' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               Strategies
             </button>
+            <button onClick={() => setActiveTab('spot')}
+              className={`px-3 py-2 rounded text-sm ${activeTab === 'spot' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
+              Spot
+            </button>
             <button onClick={() => setActiveTab('ai')}
               className={`px-3 py-2 rounded text-sm ${activeTab === 'ai' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               AI Models
@@ -91,6 +96,7 @@ function App() {
         {activeTab === 'pairs' && <TokenPairManager />}
         {activeTab === 'wallets' && <WalletManager />}
         {activeTab === 'strategies' && <StrategyManager />}
+        {activeTab === 'spot' && <SpotStrategyManager />}
         {activeTab === 'ai' && <AiManager />}
         {activeTab === 'security' && <SecurityManager />}
         {activeTab === 'config' && <ConfigManager />}

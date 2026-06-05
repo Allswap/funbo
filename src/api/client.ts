@@ -192,3 +192,20 @@ export const authService = {
     sessionStorage.removeItem('dashboard_api_key');
   },
 };
+
+export const spotStrategyService = {
+  add: (data: { chainId: number; tokenAddress: string; stablecoinAddress: string; routerAddress: string; buyThresholdPct?: number; sellThresholdPct?: number; tradeAmount?: string }) =>
+    api.post('/api/spot-strategies', data),
+  list: () => api.get('/api/spot-strategies'),
+  update: (id: number, data: Partial<{ tokenAddress: string; stablecoinAddress: string; routerAddress: string; buyThresholdPct: number; sellThresholdPct: number; tradeAmount: string; referencePrice: string; isActive: boolean }>) =>
+    api.patch(`/api/spot-strategies/${id}`, data),
+  remove: (id: number) => api.delete(`/api/spot-strategies/${id}`),
+  execute: (id: number) => api.post(`/api/spot-strategies/${id}/execute`),
+};
+
+export const spotPositionService = {
+  list: (status?: string) => {
+    const params = status ? `?status=${status}` : '';
+    return api.get(`/api/spot-positions${params}`);
+  },
+};
