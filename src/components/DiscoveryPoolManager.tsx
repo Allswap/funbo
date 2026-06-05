@@ -6,7 +6,7 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 export function DiscoveryPoolManager() {
   const [pools, setPools] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
-  const [form, setForm] = useState({ chainId: '', apiUrl: '', apiKeyRef: '', intervalMinutes: '60', sourceType: 'gecko' });
+  const [form, setForm] = useState({ chainId: '', apiUrl: 'https://api.geckoterminal.com', apiKeyRef: '', intervalMinutes: '60', sourceType: 'gecko' });
 
   const fetchPools = async () => {
     try {
