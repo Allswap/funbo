@@ -67,24 +67,30 @@ export function DiscoveryPoolManager() {
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <h3 className="text-lg font-semibold mb-4">Add Discovery Source</h3>
         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required
-          >
-            <option value="">Select Chain</option>
-            {networks.map((n: any) => (
-              <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
-            ))}
-          </select>
-          <select
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.sourceType} onChange={e => handleSourceTypeChange(e.target.value)}
-          >
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Chain</label>
+            <select
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required
+            >
+              <option value="">Select Chain</option>
+              {networks.map((n: any) => (
+                <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Source Type</label>
+            <select
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.sourceType} onChange={e => handleSourceTypeChange(e.target.value)}
+            >
             <option value="gecko">Gecko Terminal</option>
             <option value="defillama">DefiLlama</option>
             <option value="dexscreener">DexScreener</option>
             <option value="onchain">On-Chain (coming soon)</option>
           </select>
+          </div>
           <input placeholder="API URL (auto-filled)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
             value={form.apiUrl} onChange={e => setForm({ ...form, apiUrl: e.target.value })} />

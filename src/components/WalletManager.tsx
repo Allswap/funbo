@@ -131,14 +131,17 @@ export function WalletManager() {
           <input placeholder="Chain ID (e.g., 137 for Polygon)" type="number"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required />
-          <select className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.strategyType} onChange={e => setForm({ ...form, strategyType: e.target.value })} required>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Strategy Type</label>
+            <select className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.strategyType} onChange={e => setForm({ ...form, strategyType: e.target.value })} required>
             <option value="">Select Strategy</option>
             {strategies.map((s: any) => (
               <option key={s.key} value={s.key}>{s.name}</option>
             ))}
             <option value="spot">⚡ Spot Swing-Trade</option>
           </select>
+          </div>
           <input placeholder="Min Balance % (Safety)" type="number" step="0.1"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.minBalancePct} onChange={e => setForm({ ...form, minBalancePct: e.target.value })} />
@@ -154,13 +157,16 @@ export function WalletManager() {
               <div className="md:col-span-2 border-t border-gray-700 pt-4 mt-2">
                 <p className="text-sm text-primary font-semibold mb-3">⚡ Spot Swing-Trade Configuration</p>
               </div>
-              <select className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              <div>
+              <label className="block text-sm text-gray-400 mb-1">Chain</label>
+              <select className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
                 value={form.chainId} disabled>
                 <option value="">Chain (from above)</option>
                 {networks.map((n: any) => (
                   <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
                 ))}
               </select>
+              </div>
               <input placeholder="Token Address (token to swing-trade)"
                 className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
                 value={form.tokenAddress} onChange={e => setForm({ ...form, tokenAddress: e.target.value })} required={isSpot} />

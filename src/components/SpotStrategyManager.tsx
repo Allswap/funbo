@@ -111,13 +111,16 @@ export function SpotStrategyManager() {
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <h3 className="text-lg font-semibold mb-4">Add Spot Strategy</h3>
         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <select className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required>
-            <option value="">Select Chain</option>
-            {networks.map((n: any) => (
-              <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
-            ))}
-          </select>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Chain</label>
+            <select className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required>
+              <option value="">Select Chain</option>
+              {networks.map((n: any) => (
+                <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
+              ))}
+            </select>
+          </div>
           <input placeholder="Token Address (token to trade)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
             value={form.tokenAddress} onChange={e => setForm({ ...form, tokenAddress: e.target.value })} required />

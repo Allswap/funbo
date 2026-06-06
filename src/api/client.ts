@@ -209,3 +209,20 @@ export const spotPositionService = {
     return api.get(`/api/spot-positions${params}`);
   },
 };
+
+export const soloSpotStrategyService = {
+  add: (data: { chainId: number; tokenAddress: string; tradeAmount?: string }) =>
+    api.post('/api/solo-spot-strategies', data),
+  list: () => api.get('/api/solo-spot-strategies'),
+  update: (id: number, data: Partial<{ tokenAddress: string; tradeAmount: string; isActive: boolean }>) =>
+    api.patch(`/api/solo-spot-strategies/${id}`, data),
+  remove: (id: number) => api.delete(`/api/solo-spot-strategies/${id}`),
+  execute: () => api.post('/api/solo-spot/execute'),
+};
+
+export const soloSpotTradeService = {
+  list: (strategyId?: number) => {
+    const params = strategyId ? `?strategyId=${strategyId}` : '';
+    return api.get(`/api/solo-spot-trades${params}`);
+  },
+};

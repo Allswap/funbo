@@ -13,10 +13,11 @@ import { TokenPairManager } from './components/TokenPairManager';
 import { OpportunityManager } from './components/OpportunityManager';
 import { DiscoveryPoolManager } from './components/DiscoveryPoolManager';
 import { SpotStrategyManager } from './components/SpotStrategyManager';
+import { SoloSpotStrategyManager } from './components/SoloSpotStrategyManager';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'ai' | 'security' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'solo-spot' | 'ai' | 'security' | 'config'>('dashboard');
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -64,6 +65,10 @@ function App() {
               className={`px-3 py-2 rounded text-sm ${activeTab === 'spot' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               Spot
             </button>
+            <button onClick={() => setActiveTab('solo-spot')}
+              className={`px-3 py-2 rounded text-sm ${activeTab === 'solo-spot' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
+              Solo-Spot
+            </button>
             <button onClick={() => setActiveTab('ai')}
               className={`px-3 py-2 rounded text-sm ${activeTab === 'ai' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               AI Models
@@ -97,6 +102,7 @@ function App() {
         {activeTab === 'wallets' && <WalletManager />}
         {activeTab === 'strategies' && <StrategyManager />}
         {activeTab === 'spot' && <SpotStrategyManager />}
+        {activeTab === 'solo-spot' && <SoloSpotStrategyManager />}
         {activeTab === 'ai' && <AiManager />}
         {activeTab === 'security' && <SecurityManager />}
         {activeTab === 'config' && <ConfigManager />}

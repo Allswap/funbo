@@ -56,15 +56,18 @@ export function SecurityManager() {
           <input placeholder="Name (e.g. GoPlus Token Safety)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-          <select
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}
-          >
-            <option value="goplus">GoPlus Security</option>
-            <option value="custom">Custom Provider</option>
-            <option value="rugcheck">RugCheck</option>
-            <option value="honeypot">Honeypot Detector</option>
-          </select>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Provider</label>
+            <select
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}
+            >
+              <option value="goplus">GoPlus Security</option>
+              <option value="custom">Custom Provider</option>
+              <option value="rugcheck">RugCheck</option>
+              <option value="honeypot">Honeypot Detector</option>
+            </select>
+          </div>
           <input placeholder="Priority (0=high)" type="number" min="0"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })} />

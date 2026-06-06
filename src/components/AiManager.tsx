@@ -57,15 +57,18 @@ export function AiManager() {
           <input placeholder="Name (e.g. Llama 3 Advisor)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-          <select
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}
-          >
-            <option value="workers-ai">Workers AI</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="google">Google AI</option>
-          </select>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Provider</label>
+            <select
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}
+            >
+              <option value="workers-ai">Workers AI</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="google">Google AI</option>
+            </select>
+          </div>
           <input placeholder="Model (e.g. @cf/meta/llama-3-70b-instruct)"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-sm"
             value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} required />

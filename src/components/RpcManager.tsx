@@ -103,15 +103,18 @@ export function RpcManager() {
         <div className="bg-dark p-6 rounded-lg border border-gray-800">
           <h3 className="text-lg font-semibold mb-4">Add RPC Endpoint</h3>
           <form onSubmit={handleAdd} className="space-y-3">
-            <select
-              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-              value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required
-            >
-              <option value="">Select Chain</option>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Chain</label>
+              <select
+                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+                value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required
+              >
+                <option value="">Select Chain</option>
               {networks.map((n: any) => (
                 <option key={n.chain_id} value={n.chain_id}>{n.name} (ID: {n.chain_id})</option>
               ))}
             </select>
+            </div>
             <input placeholder="RPC URL (https://...)"
               className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-sm"
               value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} required />
