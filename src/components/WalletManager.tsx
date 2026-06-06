@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { walletService, strategyService, spotStrategyService, networkService } from '../api/client';
+import { walletService, strategyService, spotStrategyService, soloSpotStrategyService, networkService } from '../api/client';
 import { Plus, RefreshCw, Power, Loader2, Activity, Play } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
@@ -64,6 +64,14 @@ export function WalletManager() {
         });
       }
 
+      if (form.strategyType === 'solo_spot' && form.tokenAddress) {
+        await soloSpotStrategyService.add({
+          chainId: parseInt(form.chainId),
+          tokenAddress: form.tokenAddress,
+          tradeAmount: form.tradeAmount || '10',
+        });
+      }
+
       setForm({
         label: '', address: '', chainId: '', strategyType: '',
         minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05',
@@ -107,6 +115,7 @@ export function WalletManager() {
   };
 
   const isSpot = form.strategyType === 'spot';
+  const isSoloSpot = form.strategyType === 'solo_spot';
 
   return (
     <div className="space-y-6">
@@ -122,15 +131,24 @@ export function WalletManager() {
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <h3 className="text-lg font-semibold mb-4">Add Strategy Wallet</h3>
         <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input placeholder="Label (e.g., BroilerPlus LP)"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} required />
-          <input placeholder="Wallet Address"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} required />
-          <input placeholder="Chain ID (e.g., 137 for Polygon)" type="number"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required />
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Label</label>
+            <input placeholder="e.g. BroilerPlus LP"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} required />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Wallet Address</label>
+            <input placeholder="0x..."
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} required />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Chain ID</label>
+            <input placeholder="e.g. 137 for Polygon" type="number"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.chainId} onChange={e => setForm({ ...form, chainId: e.target.value })} required />
+          </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Strategy Type</label>
             <select className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
@@ -140,17 +158,27 @@ export function WalletManager() {
               <option key={s.key} value={s.key}>{s.name}</option>
             ))}
             <option value="spot">⚡ Spot Swing-Trade</option>
+            <option value="solo_spot">🔄 Solo-Spot Round-Trip</option>
           </select>
           </div>
-          <input placeholder="Min Balance % (Safety)" type="number" step="0.1"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.minBalancePct} onChange={e => setForm({ ...form, minBalancePct: e.target.value })} />
-          <input placeholder="Max Balance % Per Trade (e.g., 50)" type="number" step="0.1"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.maxBalancePct} onChange={e => setForm({ ...form, maxBalancePct: e.target.value })} />
-          <input placeholder="Min Fixed Amount (e.g., 0.05)"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.minBalanceAmount} onChange={e => setForm({ ...form, minBalanceAmount: e.target.value })} />
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Min Balance % (Safety)</label>
+            <input placeholder="e.g. 10" type="number" step="0.1"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.minBalancePct} onChange={e => setForm({ ...form, minBalancePct: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Max Balance % Per Trade</label>
+            <input placeholder="e.g. 50" type="number" step="0.1"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.maxBalancePct} onChange={e => setForm({ ...form, maxBalancePct: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Min Fixed Amount</label>
+            <input placeholder="e.g. 0.05"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.minBalanceAmount} onChange={e => setForm({ ...form, minBalanceAmount: e.target.value })} />
+          </div>
 
           {isSpot && (
             <>
@@ -188,9 +216,23 @@ export function WalletManager() {
             </>
           )}
 
+          {isSoloSpot && (
+            <>
+              <div className="md:col-span-2 border-t border-gray-700 pt-4 mt-2">
+                <p className="text-sm text-primary font-semibold mb-3">🔄 Solo-Spot Round-Trip Configuration</p>
+              </div>
+              <input placeholder="Token Address (the token to round-trip on)"
+                className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
+                value={form.tokenAddress} onChange={e => setForm({ ...form, tokenAddress: e.target.value })} required={isSoloSpot} />
+              <input placeholder="Trade Amount (token amount per round-trip)" type="number" step="0.1"
+                className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+                value={form.tradeAmount} onChange={e => setForm({ ...form, tradeAmount: e.target.value })} />
+            </>
+          )}
+
           <button type="submit"
             className="md:col-span-2 bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded flex items-center justify-center gap-2">
-            <Plus size={20} /> {isSpot ? 'Add Wallet + Spot Strategy' : 'Add Wallet'}
+            <Plus size={20} /> {isSpot ? 'Add Wallet + Spot Strategy' : isSoloSpot ? 'Add Wallet + Solo-Spot Strategy' : 'Add Wallet'}
           </button>
         </form>
       </div>
@@ -248,9 +290,10 @@ export function WalletManager() {
                           w.strategy_type === 'mm' ? 'bg-purple-900 text-purple-300' :
                           w.strategy_type === 'yield' ? 'bg-green-900 text-green-300' :
                           w.strategy_type === 'spot' ? 'bg-yellow-900 text-yellow-300' :
+                          w.strategy_type === 'solo_spot' ? 'bg-cyan-900 text-cyan-300' :
                           'bg-blue-900 text-blue-300'
                         }`}>
-                          {w.strategy_type.toUpperCase()}
+                          {w.strategy_type === 'solo_spot' ? 'SOLO-SPOT' : w.strategy_type.toUpperCase()}
                         </span>
                       </td>
                       <td className="p-3 font-mono text-sm">{w.chain_id}</td>

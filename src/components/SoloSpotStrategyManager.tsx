@@ -10,7 +10,7 @@ export function SoloSpotStrategyManager() {
   const [error, setError] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ chainId: '', tokenAddress: '', tradeAmount: '10' });
+  const [form, setForm] = useState({ chainId: '', tokenAddress: '', tradeAmount: '10', minTradeAmount: '', maxTradeAmount: '' });
 
   const fetchAll = async () => {
     const [stratRes, netRes] = await Promise.all([
@@ -42,8 +42,10 @@ export function SoloSpotStrategyManager() {
         chainId: parseInt(form.chainId),
         tokenAddress: form.tokenAddress,
         tradeAmount: form.tradeAmount,
+        minTradeAmount: form.minTradeAmount || undefined,
+        maxTradeAmount: form.maxTradeAmount || undefined,
       });
-      setForm({ chainId: '', tokenAddress: '', tradeAmount: '10' });
+      setForm({ chainId: '', tokenAddress: '', tradeAmount: '10', minTradeAmount: '', maxTradeAmount: '' });
       refetch();
     } catch (err: any) {
       setError(err?.response?.data?.error || err.message || 'Failed to add');
@@ -118,6 +120,12 @@ export function SoloSpotStrategyManager() {
           <input placeholder="Trade Amount (default 10)" type="number" step="0.1" min="0"
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
             value={form.tradeAmount} onChange={e => setForm({ ...form, tradeAmount: e.target.value })} />
+          <input placeholder="Min Trade Amount (optional)" type="number" step="0.1" min="0"
+            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+            value={form.minTradeAmount} onChange={e => setForm({ ...form, minTradeAmount: e.target.value })} />
+          <input placeholder="Max Trade Amount (optional)" type="number" step="0.1" min="0"
+            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+            value={form.maxTradeAmount} onChange={e => setForm({ ...form, maxTradeAmount: e.target.value })} />
           <button type="submit" className="bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded flex items-center justify-center gap-2">
             <Plus size={20} /> Add Strategy
           </button>
@@ -167,6 +175,8 @@ export function SoloSpotStrategyManager() {
                 <th className="p-3">Chain</th>
                 <th className="p-3">Token</th>
                 <th className="p-3">Amount</th>
+                <th className="p-3">Min</th>
+                <th className="p-3">Max</th>
                 <th className="p-3">Active</th>
                 <th className="p-3">Created</th>
                 <th className="p-3">Actions</th>
@@ -179,6 +189,8 @@ export function SoloSpotStrategyManager() {
                   <td className="p-3">{s.chain_id}</td>
                   <td className="p-3 font-mono text-xs max-w-[200px] truncate">{s.token_address}</td>
                   <td className="p-3">{s.trade_amount}</td>
+                  <td className="p-3">{s.min_trade_amount || <span className="text-gray-500">-</span>}</td>
+                  <td className="p-3">{s.max_trade_amount || <span className="text-gray-500">-</span>}</td>
                   <td className="p-3">
                     <span className={`px-2 py-1 rounded text-xs ${s.is_active ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'}`}>
                       {s.is_active ? 'Active' : 'Inactive'}

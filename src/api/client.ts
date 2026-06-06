@@ -211,10 +211,10 @@ export const spotPositionService = {
 };
 
 export const soloSpotStrategyService = {
-  add: (data: { chainId: number; tokenAddress: string; tradeAmount?: string }) =>
+  add: (data: { chainId: number; tokenAddress: string; tradeAmount?: string; minTradeAmount?: string; maxTradeAmount?: string }) =>
     api.post('/api/solo-spot-strategies', data),
   list: () => api.get('/api/solo-spot-strategies'),
-  update: (id: number, data: Partial<{ tokenAddress: string; tradeAmount: string; isActive: boolean }>) =>
+  update: (id: number, data: Partial<{ tokenAddress: string; tradeAmount: string; minTradeAmount: string; maxTradeAmount: string; isActive: boolean }>) =>
     api.patch(`/api/solo-spot-strategies/${id}`, data),
   remove: (id: number) => api.delete(`/api/solo-spot-strategies/${id}`),
   execute: () => api.post('/api/solo-spot/execute'),
@@ -225,4 +225,16 @@ export const soloSpotTradeService = {
     const params = strategyId ? `?strategyId=${strategyId}` : '';
     return api.get(`/api/solo-spot-trades${params}`);
   },
+};
+
+export const mmLpConfigService = {
+  add: (data: { chainId: number; tokenAddress: string; lpAddress?: string; rebalanceThresholdPct?: number }) =>
+    api.post('/api/mm-lp-configs', data),
+  list: (chainId?: number) => {
+    const params = chainId ? `?chainId=${chainId}` : '';
+    return api.get(`/api/mm-lp-configs${params}`);
+  },
+  update: (id: number, data: Partial<{ tokenAddress: string; lpAddress: string; rebalanceThresholdPct: number; isActive: boolean }>) =>
+    api.patch(`/api/mm-lp-configs/${id}`, data),
+  remove: (id: number) => api.delete(`/api/mm-lp-configs/${id}`),
 };

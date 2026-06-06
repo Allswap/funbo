@@ -10,7 +10,7 @@ export function ConfigManager() {
     max_trade_decimals: '3',
     daily_loss_limit: '5.0',
     min_slippage: '0.5',
-    mm_rebalance_threshold: '5.0',
+
     auto_scan_enabled: 'true',
     notify_urgent: 'discord,telegram',
     notify_average: 'discord',
@@ -243,14 +243,6 @@ export function ConfigManager() {
             <span className="text-primary font-bold">Auto-Detect Mode</span>: Bot calculates optimal slippage,
             clamped to at least this floor. Skipped if liquidity too thin.
           </p>
-        </div>
-
-        <div>
-          <label className="block text-sm text-gray-400 mb-2">MM Rebalance Threshold (%)</label>
-          <input type="number" step="0.1" value={config.mm_rebalance_threshold}
-            onChange={e => handleChange('mm_rebalance_threshold', e.target.value)}
-            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
-          <p className="text-xs text-gray-500 mt-1">Rebalance BroilerPlus LP if deviation &gt; X%.</p>
         </div>
 
         <div>
