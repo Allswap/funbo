@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, networkService, soloSpotStrategyService, soloSpotTradeService } from '../api/client';
+import { networkService, soloSpotStrategyService, soloSpotTradeService } from '../api/client';
 import { Plus, Trash2, Loader2, Zap, RefreshCw, Power, ExternalLink } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
