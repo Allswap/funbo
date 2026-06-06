@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const DISCOVERY_URL = (import.meta.env.VITE_DISCOVERY_URL || '').replace(/\/$/, '');
+const EXECUTION_URL = (import.meta.env.VITE_EXECUTION_URL || '').replace(/\/$/, '');
 
 export const api = axios.create({
   baseURL: API_BASE,
@@ -13,12 +14,25 @@ const discoveryApi = DISCOVERY_URL ? axios.create({
   headers: { 'Content-Type': 'application/json' },
 }) : null;
 
+const executionApi = EXECUTION_URL ? axios.create({
+  baseURL: EXECUTION_URL,
+  headers: { 'Content-Type': 'application/json' },
+}) : null;
+
 api.interceptors.request.use((config) => {
   const apiKey = sessionStorage.getItem('dashboard_api_key');
   if (apiKey) {
     config.headers['X-API-Key'] = apiKey;
   }
   return config;
+});
+
+[executionApi, discoveryApi].filter(Boolean).forEach((inst) => {
+  (inst as any).interceptors.request.use((config: any) => {
+    const apiKey = sessionStorage.getItem('dashboard_api_key');
+    if (apiKey) config.headers['X-API-Key'] = apiKey;
+    return config;
+  });
 });
 
 export const networkService = {
@@ -217,7 +231,10 @@ export const soloSpotStrategyService = {
   update: (id: number, data: Partial<{ tokenAddress: string; tradeAmount: string; minTradeAmount: string; maxTradeAmount: string; isActive: boolean }>) =>
     api.patch(`/api/solo-spot-strategies/${id}`, data),
   remove: (id: number) => api.delete(`/api/solo-spot-strategies/${id}`),
-  execute: () => api.post('/api/solo-spot/execute'),
+  execute: () => {
+    if (executionApi) return executionApi.post('/api/solo-spot/execute');
+    return api.post('/api/solo-spot/execute');
+  },
 };
 
 export const soloSpotTradeService = {
