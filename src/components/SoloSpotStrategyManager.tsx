@@ -10,7 +10,7 @@ export function SoloSpotStrategyManager() {
   const [error, setError] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ chainId: '', tokenAddress: '', tradeAmount: '10', minTradeAmount: '', maxTradeAmount: '' });
+  const [form, setForm] = useState({ chainId: '', tokenAddress: '', tradeAmount: '', minTradeAmount: '', maxTradeAmount: '' });
 
   const fetchAll = async () => {
     const [stratRes, netRes] = await Promise.all([
@@ -45,7 +45,7 @@ export function SoloSpotStrategyManager() {
         minTradeAmount: form.minTradeAmount || undefined,
         maxTradeAmount: form.maxTradeAmount || undefined,
       });
-      setForm({ chainId: '', tokenAddress: '', tradeAmount: '10', minTradeAmount: '', maxTradeAmount: '' });
+      setForm({ chainId: '', tokenAddress: '', tradeAmount: '', minTradeAmount: '', maxTradeAmount: '' });
       refetch();
     } catch (err: any) {
       setError(err?.response?.data?.error || err.message || 'Failed to add');
@@ -86,8 +86,11 @@ export function SoloSpotStrategyManager() {
     }
   };
 
-  const viewTx = (txHash: string) => {
-    if (txHash) window.open(`https://polygonscan.com/tx/${txHash}`, '_blank');
+  const viewTx = (txHash: string, chainId?: number) => {
+    if (!txHash) return;
+    const net = networks.find((n: any) => n.chain_id === chainId);
+    const baseUrl = net?.explorer_url ? net.explorer_url.replace(/\/$/, '') : 'https://polygonscan.com';
+    window.open(`${baseUrl}/tx/${txHash}`, '_blank');
   };
 
   return (
@@ -250,14 +253,14 @@ export function SoloSpotStrategyManager() {
                   </td>
                   <td className="p-3">
                     {t.buy_tx_hash ? (
-                      <button onClick={() => viewTx(t.buy_tx_hash)} className="text-primary hover:underline flex items-center gap-1 text-xs">
+                      <button onClick={() => viewTx(t.buy_tx_hash, t.chain_id)} className="text-primary hover:underline flex items-center gap-1 text-xs">
                         Tx <ExternalLink size={12} />
                       </button>
                     ) : '-'}
                   </td>
                   <td className="p-3">
                     {t.sell_tx_hash ? (
-                      <button onClick={() => viewTx(t.sell_tx_hash)} className="text-primary hover:underline flex items-center gap-1 text-xs">
+                      <button onClick={() => viewTx(t.sell_tx_hash, t.chain_id)} className="text-primary hover:underline flex items-center gap-1 text-xs">
                         Tx <ExternalLink size={12} />
                       </button>
                     ) : '-'}

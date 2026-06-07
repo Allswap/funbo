@@ -5,7 +5,7 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function AiManager() {
   const [configs, setConfigs] = useState<any[]>([]);
-  const [form, setForm] = useState({ name: '', provider: 'workers-ai', model: '@cf/meta/llama-3-70b-instruct', priority: '0' });
+  const [form, setForm] = useState({ name: '', provider: '', model: '', priority: '' });
 
   const fetchConfigs = async () => {
     try {

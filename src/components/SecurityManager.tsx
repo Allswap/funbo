@@ -5,7 +5,7 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function SecurityManager() {
   const [layers, setLayers] = useState<any[]>([]);
-  const [form, setForm] = useState({ name: '', provider: 'goplus', priority: '0' });
+  const [form, setForm] = useState({ name: '', provider: '', priority: '' });
 
   const fetchLayers = async () => {
     try {

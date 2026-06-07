@@ -6,7 +6,7 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 export function DiscoveryPoolManager() {
   const [pools, setPools] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
-  const [form, setForm] = useState({ chainId: '', apiUrl: 'https://api.geckoterminal.com', apiKeyRef: '', intervalMinutes: '60', sourceType: 'gecko' });
+  const [form, setForm] = useState({ chainId: '', apiUrl: '', apiKeyRef: '', intervalMinutes: '', sourceType: '' });
 
   const fetchPools = async () => {
     try {
@@ -24,11 +24,7 @@ export function DiscoveryPoolManager() {
   const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchPools, POLL_HEAVY);
 
   const handleSourceTypeChange = (sourceType: string) => {
-    let apiUrl = '';
-    if (sourceType === 'gecko') apiUrl = 'https://api.geckoterminal.com';
-    else if (sourceType === 'defillama') apiUrl = 'https://pro-api.llama.fi';
-    else if (sourceType === 'dexscreener') apiUrl = 'https://api.dexscreener.com';
-    setForm(f => ({ ...f, sourceType, apiUrl }));
+    setForm(f => ({ ...f, sourceType }));
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -42,7 +38,7 @@ export function DiscoveryPoolManager() {
         sourceType: form.sourceType,
       });
       alert('Discovery Pool Added!');
-      setForm({ chainId: '', apiUrl: '', apiKeyRef: '', intervalMinutes: '60', sourceType: 'gecko' });
+      setForm({ chainId: '', apiUrl: '', apiKeyRef: '', intervalMinutes: '', sourceType: '' });
       refetch();
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || 'Unknown error';

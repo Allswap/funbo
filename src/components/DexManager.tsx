@@ -29,7 +29,7 @@ export function DexManager() {
       };
       if (form.version === 'v3') {
         payload.quoterAddress = form.quoterAddress;
-        payload.feeTiers = form.feeTiers || '3000';
+        payload.feeTiers = form.feeTiers;
       }
       if (form.version === 'balancer') {
         payload.feeTiers = form.poolId || '';

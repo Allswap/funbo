@@ -5,32 +5,32 @@ import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function ConfigManager() {
   const [config, setConfig] = useState({
-    min_profit_pct: '1.5',
-    max_profit_pct: '20.0',
-    max_trade_decimals: '3',
-    daily_loss_limit: '5.0',
-    min_slippage: '0.5',
+    min_profit_pct: '',
+    max_profit_pct: '',
+    max_trade_decimals: '',
+    daily_loss_limit: '',
+    min_slippage: '',
 
-    auto_scan_enabled: 'true',
-    notify_urgent: 'discord,telegram',
-    notify_average: 'discord',
-    notify_normal: 'discord',
+    auto_scan_enabled: 'false',
+    notify_urgent: '',
+    notify_average: '',
+    notify_normal: '',
     discord_webhook_url: '',
     telegram_chat_id: '',
     notify_email_from: '',
     notify_email_to: '',
     telegram_username: '',
-    scan_interval_minutes: '5',
-    default_fee_tier: '3000',
-    protected_rpc_pool: 'https://mevblocker.io,https://flashbots.net',
+    scan_interval_minutes: '',
+    default_fee_tier: '',
+    protected_rpc_pool: '',
     blockscout_api_key: '',
-    system_api_key: 'dashboard2026',
-    default_password: 'bot123',
+    system_api_key: '',
+    default_password: '',
     auto_discover_enabled: 'false',
-    auto_discover_source: 'gecko',
-    auto_discover_interval: '60',
+    auto_discover_source: '',
+    auto_discover_interval: '',
     executor_contract_address: '',
-    executor_mode: 'direct',
+    executor_mode: '',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -279,23 +279,23 @@ export function ConfigManager() {
         </div>
 
         <div className="md:col-span-2 bg-darker p-4 rounded border border-warning/30">
-          <h3 className="font-bold text-lg text-warning mb-3">System Credentials (for testing/setup)</h3>
+          <h3 className="font-bold text-lg text-warning mb-3">System Credentials</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-2">Default API Key</label>
               <input value={config.system_api_key || ''}
                 onChange={e => handleChange('system_api_key', e.target.value)}
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
-                placeholder="dashboard2026" />
-              <p className="text-xs text-gray-500 mt-1">Hardcoded fallback key used by /api/setup-key and /api/login-password. Change in production.</p>
+                placeholder="(set via config)" />
+              <p className="text-xs text-gray-500 mt-1">API key used by /api/setup-key and /api/login-password.</p>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-2">Default Password</label>
               <input type="password" value={config.default_password || ''}
                 onChange={e => handleChange('default_password', e.target.value)}
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
-                placeholder="bot123" />
-              <p className="text-xs text-gray-500 mt-1">Password used for /api/login-password fallback. Change in production.</p>
+                placeholder="(set via config)" />
+              <p className="text-xs text-gray-500 mt-1">Password used for /api/login-password fallback.</p>
             </div>
           </div>
         </div>

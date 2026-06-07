@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { opportunityService, tradeService } from '../api/client';
 import { RefreshCw, Play, Loader2, Power } from 'lucide-react';
-import { useAutoPoll } from '../hooks/useAutoPoll';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function OpportunityManager() {
   const [ops, setOps] = useState<any[]>([]);
@@ -16,7 +16,7 @@ export function OpportunityManager() {
     }
   };
 
-  const { loading: pollLoading, isPolling, refetch, togglePolling } = useAutoPoll(fetchOps, { interval: 20000 });
+  const { loading: pollLoading, isPolling, refetch, togglePolling } = useAutoPoll(fetchOps, POLL_HEAVY);
 
   const runExec = async () => {
     setLoading(true);

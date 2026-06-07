@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Wallet, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || 'bot123';
+const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD || '';
 
 declare global {
   interface Window {
@@ -249,9 +249,9 @@ export function Login({ onLogin }: { onLogin: () => void }) {
             {loading && <Loader2 className="animate-spin" size={20} />}
             {loading ? 'Setting up...' : 'Initialize Dashboard'}
           </button>
-          <p className="text-xs text-gray-500 text-center mt-4">
+          {TEST_PASSWORD && <p className="text-xs text-gray-500 text-center mt-4">
             Default password: <code className="bg-gray-800 px-1 rounded">{TEST_PASSWORD}</code>
-          </p>
+          </p>}
         </div>
       </div>
     );

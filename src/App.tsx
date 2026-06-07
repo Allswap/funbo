@@ -15,10 +15,11 @@ import { DiscoveryPoolManager } from './components/DiscoveryPoolManager';
 import { SpotStrategyManager } from './components/SpotStrategyManager';
 import { SoloSpotStrategyManager } from './components/SoloSpotStrategyManager';
 import { MmConfigManager } from './components/MmConfigManager';
+import { WhitelistManager } from './components/WhitelistManager';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'solo-spot' | 'mm' | 'ai' | 'security' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'solo-spot' | 'mm' | 'ai' | 'security' | 'config' | 'whitelist'>('dashboard');
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -78,6 +79,10 @@ function App() {
               className={`px-3 py-2 rounded text-sm ${activeTab === 'ai' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               AI Models
             </button>
+            <button onClick={() => setActiveTab('whitelist')}
+              className={`px-3 py-2 rounded text-sm ${activeTab === 'whitelist' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
+              Whitelist
+            </button>
             <button onClick={() => setActiveTab('security')}
               className={`px-3 py-2 rounded text-sm ${activeTab === 'security' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
               Security
@@ -110,6 +115,7 @@ function App() {
         {activeTab === 'solo-spot' && <SoloSpotStrategyManager />}
         {activeTab === 'mm' && <MmConfigManager />}
         {activeTab === 'ai' && <AiManager />}
+        {activeTab === 'whitelist' && <WhitelistManager />}
         {activeTab === 'security' && <SecurityManager />}
         {activeTab === 'config' && <ConfigManager />}
       </main>

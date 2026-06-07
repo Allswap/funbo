@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { mmLpConfigService, networkService } from '../api/client';
-import { Plus, Trash2, Layers, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Layers, RefreshCw, Loader2, Power } from 'lucide-react';
+import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function MmConfigManager() {
   const [configs, setConfigs] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ chainId: '', tokenAddress: '', lpAddress: '', rebalanceThresholdPct: '5.0' });
+  const [form, setForm] = useState({ chainId: '', tokenAddress: '', lpAddress: '', rebalanceThresholdPct: '' });
 
   const fetchAll = async () => {
     setError(null);
@@ -22,7 +23,7 @@ export function MmConfigManager() {
     }
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchAll, POLL_HEAVY);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,8 +36,8 @@ export function MmConfigManager() {
         lpAddress: form.lpAddress || undefined,
         rebalanceThresholdPct: parseFloat(form.rebalanceThresholdPct),
       });
-      setForm({ chainId: '', tokenAddress: '', lpAddress: '', rebalanceThresholdPct: '5.0' });
-      fetchAll();
+      setForm({ chainId: '', tokenAddress: '', lpAddress: '', rebalanceThresholdPct: '' });
+      refetch();
     } catch (err: any) {
       setError(err?.response?.data?.error || err.message || 'Failed to add');
     }
@@ -46,7 +47,7 @@ export function MmConfigManager() {
     if (!confirm('Remove this MM LP config?')) return;
     try {
       await mmLpConfigService.remove(id);
-      fetchAll();
+      refetch();
     } catch (err: any) {
       setError(err?.response?.data?.error || err.message || 'Failed to remove');
     }
@@ -55,7 +56,7 @@ export function MmConfigManager() {
   const handleToggleActive = async (id: number, current: boolean) => {
     try {
       await mmLpConfigService.update(id, { isActive: !current });
-      fetchAll();
+      refetch();
     } catch (err: any) {
       setError(err?.response?.data?.error || err.message || 'Failed to toggle');
     }
@@ -64,7 +65,7 @@ export function MmConfigManager() {
   const handleUpdateThreshold = async (id: number, val: string) => {
     try {
       await mmLpConfigService.update(id, { rebalanceThresholdPct: parseFloat(val) });
-      fetchAll();
+      refetch();
     } catch { }
   };
 
@@ -122,9 +123,18 @@ export function MmConfigManager() {
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">LP Configs ({configs.length})</h3>
-          <button onClick={fetchAll} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded text-sm">
-            <RefreshCw size={16} /> Refresh
-          </button>
+          <div className="flex gap-2">
+            <button onClick={refetch} disabled={loading}
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50 text-sm">
+              {loading ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+              Refresh
+            </button>
+            <button onClick={togglePolling}
+              className={`flex items-center gap-2 font-bold py-2 px-4 rounded text-sm ${isPolling ? 'bg-success hover:bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
+              <Power size={16} />
+              {isPolling ? 'Auto ON' : 'Auto OFF'}
+            </button>
+          </div>
         </div>
         {configs.length === 0 ? (
           <p className="text-gray-500 text-center py-8">No LP configs yet. Add one above.</p>

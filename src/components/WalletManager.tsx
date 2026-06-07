@@ -12,10 +12,10 @@ export function WalletManager() {
   const [form, setForm] = useState({
     label: '', address: '', chainId: '',
     strategyType: '',
-    minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05',
+    minBalancePct: '', maxBalancePct: '', minBalanceAmount: '',
     // Spot strategy fields (shown when strategyType === 'spot')
     tokenAddress: '', stablecoinAddress: '', routerAddress: '',
-    buyThresholdPct: '5', sellThresholdPct: '5', tradeAmount: '10',
+    buyThresholdPct: '', sellThresholdPct: '', tradeAmount: '',
   });
 
   const fetchAll = async () => {
@@ -74,9 +74,9 @@ export function WalletManager() {
 
       setForm({
         label: '', address: '', chainId: '', strategyType: '',
-        minBalancePct: '10', maxBalancePct: '50', minBalanceAmount: '0.05',
+        minBalancePct: '', maxBalancePct: '', minBalanceAmount: '',
         tokenAddress: '', stablecoinAddress: '', routerAddress: '',
-        buyThresholdPct: '5', sellThresholdPct: '5', tradeAmount: '10',
+        buyThresholdPct: '', sellThresholdPct: '', tradeAmount: '',
       });
       refetch();
     } catch (err: any) {

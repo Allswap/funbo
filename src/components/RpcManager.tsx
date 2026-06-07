@@ -77,7 +77,8 @@ export function RpcManager() {
   };
 
   const handleCheckAll = async () => {
-    const chainId = parseInt(form.chainId) || 137;
+    const chainId = parseInt(form.chainId);
+    if (!chainId) return alert('Select a chain first');
     try {
       await rpcPoolService.check(chainId);
       refetchHealth();

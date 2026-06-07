@@ -8,7 +8,7 @@ export function SpotStrategyManager() {
   const [positions, setPositions] = useState<any[]>([]);
   const [networks, setNetworks] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ chainId: '', tokenAddress: '', stablecoinAddress: '', routerAddress: '', buyThresholdPct: '5', sellThresholdPct: '5', tradeAmount: '10' });
+  const [form, setForm] = useState({ chainId: '', tokenAddress: '', stablecoinAddress: '', routerAddress: '', buyThresholdPct: '', sellThresholdPct: '', tradeAmount: '' });
 
   const fetchAll = async () => {
     try {
@@ -43,7 +43,7 @@ export function SpotStrategyManager() {
         tradeAmount: form.tradeAmount,
       });
       alert('Spot Strategy Added!');
-      setForm({ chainId: '', tokenAddress: '', stablecoinAddress: '', routerAddress: '', buyThresholdPct: '5', sellThresholdPct: '5', tradeAmount: '10' });
+      setForm({ chainId: '', tokenAddress: '', stablecoinAddress: '', routerAddress: '', buyThresholdPct: '', sellThresholdPct: '', tradeAmount: '' });
       refetch();
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || 'Unknown error';
@@ -98,7 +98,7 @@ export function SpotStrategyManager() {
 
   const explorerTxUrl = (chainId: number, txHash: string) => {
     const explorer = networkMap[chainId]?.explorer_url;
-    return explorer ? `${explorer.replace(/\/$/, '')}/tx/${txHash}` : `https://etherscan.io/tx/${txHash}`;
+    return explorer ? `${explorer.replace(/\/$/, '')}/tx/${txHash}` : '#';
   };
 
   return (
