@@ -169,7 +169,7 @@ export const discoveryPoolService = {
   },
   remove: (id: number) =>
     api.delete(`/api/discovery-pools/${id}`),
-  runDiscovery: (data) => api.post('/api/discovery/run', data),
+  runDiscovery: (data: { chainId?: number; sourceType?: string }) => api.post('/api/discovery/run', data),
 };
 
 export const authService = {
