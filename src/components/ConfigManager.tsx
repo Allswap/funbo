@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { configService, tradeService } from '../api/client';
 import { Save, AlertTriangle, Play, Pause, RefreshCw, Power } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
@@ -27,10 +27,10 @@ export function ConfigManager() {
     system_api_key: '',
     default_password: '',
     auto_discover_enabled: 'false',
-    auto_discover_source: '',
+    auto_discover_source: 'gecko',
     auto_discover_interval: '',
     executor_contract_address: '',
-    executor_mode: '',
+    executor_mode: 'direct',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -50,7 +50,7 @@ export function ConfigManager() {
         if (r.key === 'status') {
           setLastScan(r.value.last_auto_scan);
           newConfig.auto_scan_enabled = r.value.auto_scan_enabled ? 'true' : 'false';
-        } else if (config[r.key as keyof typeof config] !== undefined) {
+        } else if (r.value !== null && config[r.key as keyof typeof config] !== undefined) {
           newConfig[r.key as keyof typeof config] = r.value;
         }
       });
@@ -62,7 +62,7 @@ export function ConfigManager() {
 
   const { loading, isPolling, refetch, togglePolling } = useAutoPoll(loadConfig, POLL_HEAVY);
 
-  useEffect(() => { loadConfig(); }, []);
+
 
   const handleChange = (key: string, value: string) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -72,7 +72,8 @@ export function ConfigManager() {
     setSaving(true);
     try {
       await Promise.all(
-        Object.entries(config).map(([key, value]) => configService.set(key, value))
+        Object.entries(config)
+          .map(([key, value]) => configService.set(key, value ?? ''))
       );
       alert('Configuration saved!');
       await refetch();
@@ -283,7 +284,7 @@ export function ConfigManager() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-2">Default API Key</label>
-              <input value={config.system_api_key || ''}
+              <input type="password" value={config.system_api_key || ''}
                 onChange={e => handleChange('system_api_key', e.target.value)}
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-warning outline-none font-mono text-xs"
                 placeholder="(set via config)" />
@@ -309,18 +310,22 @@ export function ConfigManager() {
                 onChange={e => handleChange('executor_contract_address', e.target.value)}
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none font-mono text-xs"
                 placeholder="0x..." />
-              <p className="text-xs text-gray-500 mt-1">Smart contract for on-chain swap execution. Required for executor mode.</p>
+              <p className="text-xs text-gray-500 mt-1">ArbExecutor.sol address on Polygon. Leave empty for worker-only mode.</p>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-2">Executor Mode</label>
               <select value={config.executor_mode}
                 onChange={e => handleChange('executor_mode', e.target.value)}
                 className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
-                <option value="direct">Direct (Worker signs tx)</option>
-                <option value="contract">Contract (ArbExecutor.sol only)</option>
-                <option value="become">Become (Try contract, fallback to direct)</option>
+                <option value="direct">Worker Only (wallet signs tx directly)</option>
+                <option value="contract">Contract Only (ArbExecutor.sol handles swap)</option>
+                <option value="become">Contract → Worker (try contract, fallback to direct)</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">Switch between direct execution, contract-only, or try contract with fallback.</p>
+              <p className="text-xs text-gray-500 mt-1">
+                <span className="text-purple-400">Worker Only</span> — Worker signs directly via its wallet key.<br />
+                <span className="text-purple-400">Contract Only</span> — Worker calls ArbExecutor contract which executes the swap on-chain.<br />
+                <span className="text-purple-400">Contract → Worker</span> — Tries contract first; if it reverts, falls back to direct signing.
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

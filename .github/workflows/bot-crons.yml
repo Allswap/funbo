@@ -1,0 +1,50 @@
+name: Bot Crons
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # spot strategies (solo-spot, spot, MM)
+    - cron: '*/15 * * * *'  # cross-dex + triangular arb
+    - cron: '0 * * * *'     # hourly pool discovery
+    - cron: '*/5 * * * *'   # execute pending opportunities
+    - cron: '*/2 * * * *'   # aggressive scan + execute (cross-dex)
+  workflow_dispatch: {}
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Spot Strategies (*/10)
+        if: github.event.schedule == '*/10 * * * *'
+        run: |
+          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/spot-strategies \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Cross-DEX + Triangular (*/15)
+        if: github.event.schedule == '*/15 * * * *'
+        run: |
+          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
+            -H "Content-Type: application/json" \
+            --max-time 120
+
+      - name: Hourly Discovery (0 * * * *)
+        if: github.event.schedule == '0 * * * *'
+        run: |
+          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/hourly-discovery \
+            -H "Content-Type: application/json" \
+            --max-time 180
+
+      - name: Execute Pending (*/5)
+        if: github.event.schedule == '*/5 * * * *'
+        run: |
+          curl -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/execute \
+            -H "Content-Type: application/json" \
+            --max-time 120
+
+      - name: Scan & Execute (*/2)
+        if: github.event.schedule == '*/2 * * * *'
+        run: |
+          curl -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/scan-and-execute \
+            -H "Content-Type: application/json" \
+            -d '{"chainId": 137}' \
+            --max-time 120

@@ -1,23 +1,11 @@
 import axios from 'axios';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const DISCOVERY_URL = (import.meta.env.VITE_DISCOVERY_URL || '').replace(/\/$/, '');
-const EXECUTION_URL = (import.meta.env.VITE_EXECUTION_URL || '').replace(/\/$/, '');
 
 export const api = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 });
-
-const discoveryApi = DISCOVERY_URL ? axios.create({
-  baseURL: DISCOVERY_URL,
-  headers: { 'Content-Type': 'application/json' },
-}) : null;
-
-const executionApi = EXECUTION_URL ? axios.create({
-  baseURL: EXECUTION_URL,
-  headers: { 'Content-Type': 'application/json' },
-}) : null;
 
 api.interceptors.request.use((config) => {
   const apiKey = sessionStorage.getItem('dashboard_api_key');
@@ -27,14 +15,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-[executionApi, discoveryApi].filter(Boolean).forEach((inst) => {
-  (inst as any).interceptors.request.use((config: any) => {
-    const apiKey = sessionStorage.getItem('dashboard_api_key');
-    if (apiKey) config.headers['X-API-Key'] = apiKey;
-    return config;
-  });
-});
-
 export const networkService = {
   add: (data: { chainId: number; name: string; rpcUrl: string; explorerUrl?: string }) =>
     api.post('/api/networks', data),
@@ -42,8 +22,6 @@ export const networkService = {
     api.delete(`/api/networks/${chainId}`),
   list: () =>
     api.get('/api/networks'),
-  getStats: (chainId: number, explorerUrl?: string) =>
-    api.get(`/api/networks/${chainId}/stats`, { params: { explorerUrl } }),
 };
 
 export const walletService = {
@@ -59,7 +37,7 @@ export const walletService = {
   list: () => api.get('/api/wallets'),
   remove: (id: number) => api.delete(`/api/wallets/${id}`),
   activate: (id: number, isActive: boolean) =>
-    api.patch(`/api/wallets/${id}`, { is_active: isActive }),
+    api.patch(`/api/wallets/${id}`, { isActive }),
 };
 
 export const configService = {
@@ -191,10 +169,7 @@ export const discoveryPoolService = {
   },
   remove: (id: number) =>
     api.delete(`/api/discovery-pools/${id}`),
-  runDiscovery: (data: { chainId?: number; sourceType?: string }) => {
-    if (discoveryApi) return discoveryApi.post('/api/discovery/run', data);
-    return Promise.reject(new Error('VITE_DISCOVERY_URL not set — configure it to use Run Discovery'));
-  },
+  runDiscovery: (data) => api.post('/api/discovery/run', data),
 };
 
 export const authService = {
@@ -231,10 +206,7 @@ export const soloSpotStrategyService = {
   update: (id: number, data: Partial<{ tokenAddress: string; tradeAmount: string; minTradeAmount: string; maxTradeAmount: string; isActive: boolean }>) =>
     api.patch(`/api/solo-spot-strategies/${id}`, data),
   remove: (id: number) => api.delete(`/api/solo-spot-strategies/${id}`),
-  execute: () => {
-    if (executionApi) return executionApi.post('/api/solo-spot/execute');
-    return api.post('/api/solo-spot/execute');
-  },
+  execute: () => api.post('/api/solo-spot/execute'),
 };
 
 export const soloSpotTradeService = {
