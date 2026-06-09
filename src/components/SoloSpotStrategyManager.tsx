@@ -120,15 +120,24 @@ export function SoloSpotStrategyManager() {
             <input placeholder="0x..." className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-xs"
               value={form.tokenAddress} onChange={e => setForm({ ...form, tokenAddress: e.target.value })} required />
           </div>
-          <input placeholder="Trade Amount (default 10)" type="number" step="0.1" min="0"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.tradeAmount} onChange={e => setForm({ ...form, tradeAmount: e.target.value })} />
-          <input placeholder="Min Trade Amount (optional)" type="number" step="0.1" min="0"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.minTradeAmount} onChange={e => setForm({ ...form, minTradeAmount: e.target.value })} />
-          <input placeholder="Max Trade Amount (optional)" type="number" step="0.1" min="0"
-            className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
-            value={form.maxTradeAmount} onChange={e => setForm({ ...form, maxTradeAmount: e.target.value })} />
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Trade Amount (default 10)</label>
+            <input placeholder="Trade Amount (default 10)" type="number" step="0.1" min="0"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.tradeAmount} onChange={e => setForm({ ...form, tradeAmount: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Min Trade Amount (optional)</label>
+            <input placeholder="Min Trade Amount (optional)" type="number" step="0.1" min="0"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.minTradeAmount} onChange={e => setForm({ ...form, minTradeAmount: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Max Trade Amount (optional)</label>
+            <input placeholder="Max Trade Amount (optional)" type="number" step="0.1" min="0"
+              className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none"
+              value={form.maxTradeAmount} onChange={e => setForm({ ...form, maxTradeAmount: e.target.value })} />
+          </div>
           <button type="submit" className="bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded flex items-center justify-center gap-2">
             <Plus size={20} /> Add Strategy
           </button>

@@ -7,6 +7,7 @@ export function ConfigManager() {
   const [config, setConfig] = useState({
     min_profit_pct: '',
     max_profit_pct: '',
+    min_net_profit_pct: '',
     max_trade_decimals: '',
     daily_loss_limit: '',
     min_slippage: '',
@@ -216,7 +217,15 @@ export function ConfigManager() {
           <input type="number" step="0.1" value={config.min_profit_pct}
             onChange={e => handleChange('min_profit_pct', e.target.value)}
             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
-          <p className="text-xs text-gray-500 mt-1">Minimum profit required to execute.</p>
+          <p className="text-xs text-gray-500 mt-1">Minimum gross profit required to execute.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">Net Profit After Gas (%)</label>
+          <input type="number" step="0.01" value={config.min_net_profit_pct}
+            onChange={e => handleChange('min_net_profit_pct', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
+          <p className="text-xs text-gray-500 mt-1">Minimum net profit after gas costs. Bot skips trades where net profit under threshold.</p>
         </div>
 
         <div>

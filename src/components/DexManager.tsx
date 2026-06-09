@@ -83,13 +83,20 @@ export function DexManager() {
 
           {form.version === 'v3' && (
             <>
-              <input placeholder="Quoter Address (0x...)"
-                className="p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
-                value={form.quoterAddress} onChange={e => setForm({ ...form, quoterAddress: e.target.value })} required />
-              <input placeholder="Fee Tiers (e.g. 500,3000 or 0.05,0.3,1.0)"
-                className="p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
-                value={form.feeTiers} onChange={e => setForm({ ...form, feeTiers: e.target.value })} />
-              <span className="text-xs text-purple-400 col-span-full">Accept decimal (0.05=500, 0.3=3000, 1.0=10000) or raw basis points</span>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Quoter Address</label>
+                <input placeholder="Quoter Address (0x...)"
+                  className="w-full p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
+                  value={form.quoterAddress} onChange={e => setForm({ ...form, quoterAddress: e.target.value })} required />
+                <span className="text-xs text-gray-500 mt-1">Required for V3 router quotes. Find on each DEX's documentation.</span>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Fee Tiers</label>
+                <input placeholder="Fee Tiers (e.g. 500,3000 or 0.05,0.3,1.0)"
+                  className="w-full p-3 bg-gray-800 rounded border border-purple-700 focus:border-purple-400 outline-none font-mono text-sm"
+                  value={form.feeTiers} onChange={e => setForm({ ...form, feeTiers: e.target.value })} />
+                <span className="text-xs text-gray-500 mt-1">Accept decimal (0.05=500, 0.3=3000, 1.0=10000) or raw basis points</span>
+              </div>
             </>
           )}
 

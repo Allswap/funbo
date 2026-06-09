@@ -3,9 +3,10 @@ on:
   schedule:
     - cron: '*/10 * * * *'  # spot strategies (solo-spot, spot, MM)
     - cron: '*/15 * * * *'  # cross-dex + triangular arb
-    - cron: '0 * * * *'     # hourly pool discovery
+    - cron: '0 * * * *'     # hourly: pool discovery + analytics
     - cron: '*/5 * * * *'   # execute pending opportunities
     - cron: '*/2 * * * *'   # aggressive scan + execute (cross-dex)
+    - cron: '0 2 * * *'     # daily cleanup (2 AM UTC)
   workflow_dispatch: {}
 
 jobs:
@@ -48,3 +49,18 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"chainId": 137}' \
             --max-time 120
+
+      - name: Analytics Hourly (0 * * * *)
+        if: github.event.schedule == '0 * * * *'
+        run: |
+          curl -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/analytics \
+            -H "Content-Type: application/json" \
+            --max-time 180
+
+      - name: Daily Cleanup (0 2 * * *)
+        if: github.event.schedule == '0 2 * * *'
+        run: |
+          curl -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/cleanup \
+            -H "Content-Type: application/json" \
+            -d '{"oppDays": 30, "tradeDays": 90, "pnlDays": 180}' \
+            --max-time 60
