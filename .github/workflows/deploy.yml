@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLAR_WORKERS_API }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
