@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "funbo-analytics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "funbo-db",
+      "database_name": "funbo-db",
+      "database_id": "35c17ec6-46fd-41e5-8e70-f829b4b77909"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "FUNBO_KV", "id": "297b9822c7eb4586be8ca1d52436bf0e" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "ANALYTICS_QUEUE", "queue": "funbo-analytics-queue" }
+    ]
+  },
+  "analytics_engine": {
+    "datasets": [
+      { "binding": "ANALYTICS", "dataset": "funbo_metrics" }
+    ]
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": []
+  }
+}

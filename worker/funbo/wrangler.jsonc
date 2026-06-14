@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "funbo",
+  "main": "src/index.ts",
+  "account_id": "0d8163bbd0d07b80a110280d8e60bcbf",
+  "compatibility_date": "2026-06-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "funbo-db",
+      "database_name": "funbo-db",
+      "database_id": "35c17ec6-46fd-41e5-8e70-f829b4b77909"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "FUNBO_KV", "id": "e4cac40301d442f992aca506ba69a945" }
+  ],
+  "r2_buckets": [
+    { "binding": "FUNBO_R2", "bucket_name": "funbo-execution-data" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "SCAN_QUEUE", "queue": "funbo-scan-queue" },
+      { "binding": "EXECUTE_QUEUE", "queue": "funbo-execute-queue" }
+    ]
+  },
+  "turnstile": {
+    "sitekey": "YOUR_TURNSTILE_SITEKEY",
+    "secret": "YOUR_TURNSTILE_SECRET"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "services": [
+    { "binding": "EXECUTION_WORKER", "service": "funbo-execution" },
+    { "binding": "DISCOVERY_WORKER", "service": "funbo-discovery" }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production"
+  }
+}

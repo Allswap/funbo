@@ -227,3 +227,13 @@ export const mmLpConfigService = {
     api.patch(`/api/mm-lp-configs/${id}`, data),
   remove: (id: number) => api.delete(`/api/mm-lp-configs/${id}`),
 };
+
+export const errorLogService = {
+  list: (source?: string, level?: string, limit = 100) => {
+    const params = new URLSearchParams();
+    if (source) params.append('source', source);
+    if (level) params.append('level', level);
+    params.append('limit', limit.toString());
+    return api.get(`/api/errors/logs?${params.toString()}`);
+  },
+};

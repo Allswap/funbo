@@ -1,0 +1,27 @@
+name: Deploy Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+jobs:
+  workers:
+    name: Deploy Workers
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [funbo, funbo-discovery, funbo-execution, funbo-analytics]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Deploy ${{ matrix.dir }}
+        run: npx wrangler deploy
+        working-directory: worker/${{ matrix.dir }}
+
+

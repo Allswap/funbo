@@ -16,108 +16,129 @@ import { SpotStrategyManager } from './components/SpotStrategyManager';
 import { SoloSpotStrategyManager } from './components/SoloSpotStrategyManager';
 import { MmConfigManager } from './components/MmConfigManager';
 import { WhitelistManager } from './components/WhitelistManager';
+import { ErrorLogManager } from './components/ErrorLogManager';
+
+type MainTab = 'dashboard' | 'network' | 'wallet' | 'routers' | 'config';
+type SubTab = 'networks' | 'rpc' | 'discovery' | 'wallets' | 'dex' | 'pairs' | 'opportunities' | 'config' | 'strategies' | 'security' | 'ai' | 'whitelist' | 'spot' | 'solo-spot' | 'mm' | 'errors';
+
+const MAIN_MENU: { key: MainTab; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'network', label: 'Network' },
+  { key: 'wallet', label: 'Wallet' },
+  { key: 'routers', label: 'Routers' },
+  { key: 'config', label: 'Config' },
+];
+
+const SUB_MENU: Record<MainTab, { key: SubTab; label: string }[] | null> = {
+  dashboard: null,
+  network: [
+    { key: 'networks', label: 'Networks' },
+    { key: 'rpc', label: 'RPC Pools' },
+    { key: 'discovery', label: 'Discovery Pools' },
+    { key: 'security', label: 'Security' },
+  ],
+  wallet: [
+    { key: 'wallets', label: 'Wallets' },
+    { key: 'whitelist', label: 'Whitelist' },
+  ],
+  routers: [
+    { key: 'dex', label: 'DEX Routers' },
+    { key: 'pairs', label: 'Token Pairs' },
+    { key: 'opportunities', label: 'Opportunities' },
+    { key: 'strategies', label: 'Strategies' },
+    { key: 'spot', label: 'Spot' },
+    { key: 'solo-spot', label: 'Solo-Spot' },
+    { key: 'mm', label: 'MM LP' },
+  ],
+  config: [
+    { key: 'config', label: 'Config' },
+    { key: 'ai', label: 'AI Models' },
+    { key: 'errors', label: 'Error Logs' },
+  ],
+};
+
+const FIRST_SUB: Record<MainTab, SubTab | null> = {
+  dashboard: null,
+  network: 'networks',
+  wallet: 'wallets',
+  routers: 'dex',
+  config: 'config',
+};
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'networks' | 'routers' | 'rpc' | 'opportunities' | 'discovery' | 'pairs' | 'wallets' | 'strategies' | 'spot' | 'solo-spot' | 'mm' | 'ai' | 'security' | 'config' | 'whitelist'>('dashboard');
+  const [mainTab, setMainTab] = useState<MainTab>('dashboard');
+  const [subTab, setSubTab] = useState<SubTab | null>(null);
+
+  const handleMainClick = (tab: MainTab) => {
+    setMainTab(tab);
+    setSubTab(FIRST_SUB[tab] ?? null);
+  };
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
   }
 
+  const subs = SUB_MENU[mainTab];
+
   return (
     <div className="min-h-screen bg-darker text-white">
-      <header className="bg-dark border-b border-gray-800 px-6 py-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-primary">Private EVM Bot</h1>
-          <nav className="flex flex-wrap gap-2">
-            <button onClick={() => setActiveTab('dashboard')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'dashboard' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Dashboard
-            </button>
-            <button onClick={() => setActiveTab('networks')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'networks' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Networks
-            </button>
-            <button onClick={() => setActiveTab('routers')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'routers' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Routers
-            </button>
-            <button onClick={() => setActiveTab('rpc')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'rpc' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              RPC Pools
-            </button>
-            <button onClick={() => setActiveTab('discovery')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'discovery' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Discovery Pools
-            </button>
-            <button onClick={() => setActiveTab('pairs')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'pairs' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Token Pairs
-            </button>
-            <button onClick={() => setActiveTab('wallets')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'wallets' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Wallets
-            </button>
-            <button onClick={() => setActiveTab('strategies')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'strategies' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Strategies
-            </button>
-            <button onClick={() => setActiveTab('spot')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'spot' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Spot
-            </button>
-            <button onClick={() => setActiveTab('solo-spot')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'solo-spot' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Solo-Spot
-            </button>
-            <button onClick={() => setActiveTab('mm')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'mm' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              MM LP
-            </button>
-            <button onClick={() => setActiveTab('ai')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'ai' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              AI Models
-            </button>
-            <button onClick={() => setActiveTab('whitelist')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'whitelist' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Whitelist
-            </button>
-            <button onClick={() => setActiveTab('security')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'security' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Security
-            </button>
-            <button onClick={() => setActiveTab('config')}
-              className={`px-3 py-2 rounded text-sm ${activeTab === 'config' ? 'bg-primary' : 'hover:bg-gray-800'}`}>
-              Config
-            </button>
+      <header className="bg-dark border-b border-gray-800">
+        <div className="flex items-center justify-between px-6 py-3">
+          <h1 className="text-xl font-bold text-primary">Private EVM Bot</h1>
+          <div className="flex items-center gap-1">
+            {MAIN_MENU.map(item => (
+              <button key={item.key} onClick={() => handleMainClick(item.key)}
+                className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                  mainTab === item.key
+                    ? 'bg-primary text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}>
+                {item.label}
+              </button>
+            ))}
             <button onClick={() => {
               sessionStorage.removeItem('dashboard_api_key');
               setIsAuthenticated(false);
-            }} className="px-3 py-2 rounded text-danger hover:bg-red-900/20 text-sm">
+            }} className="ml-4 px-4 py-2 rounded text-sm font-medium text-danger hover:bg-red-900/20">
               Logout
             </button>
-          </nav>
+          </div>
         </div>
+        {subs && (
+          <div className="flex items-center gap-1 px-6 pb-3">
+            {subs.map(item => (
+              <button key={item.key} onClick={() => setSubTab(item.key)}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  subTab === item.key
+                    ? 'bg-primary/20 text-primary border border-primary/40'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <main className="p-6">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'networks' && <NetworkManager />}
-        {activeTab === 'routers' && <DexManager />}
-        {activeTab === 'rpc' && <RpcManager />}
-        {activeTab === 'opportunities' && <OpportunityManager />}
-        {activeTab === 'discovery' && <DiscoveryPoolManager />}
-        {activeTab === 'pairs' && <TokenPairManager />}
-        {activeTab === 'wallets' && <WalletManager />}
-        {activeTab === 'strategies' && <StrategyManager />}
-        {activeTab === 'spot' && <SpotStrategyManager />}
-        {activeTab === 'solo-spot' && <SoloSpotStrategyManager />}
-        {activeTab === 'mm' && <MmConfigManager />}
-        {activeTab === 'ai' && <AiManager />}
-        {activeTab === 'whitelist' && <WhitelistManager />}
-        {activeTab === 'security' && <SecurityManager />}
-        {activeTab === 'config' && <ConfigManager />}
+        {mainTab === 'dashboard' && <Dashboard />}
+        {subTab === 'networks' && <NetworkManager />}
+        {subTab === 'rpc' && <RpcManager />}
+        {subTab === 'discovery' && <DiscoveryPoolManager />}
+        {subTab === 'wallets' && <WalletManager />}
+        {subTab === 'dex' && <DexManager />}
+        {subTab === 'pairs' && <TokenPairManager />}
+        {subTab === 'opportunities' && <OpportunityManager />}
+        {subTab === 'config' && <ConfigManager />}
+        {subTab === 'strategies' && <StrategyManager />}
+        {subTab === 'security' && <SecurityManager />}
+        {subTab === 'ai' && <AiManager />}
+        {subTab === 'whitelist' && <WhitelistManager />}
+        {subTab === 'spot' && <SpotStrategyManager />}
+        {subTab === 'solo-spot' && <SoloSpotStrategyManager />}
+        {subTab === 'mm' && <MmConfigManager />}
+        {subTab === 'errors' && <ErrorLogManager />}
       </main>
     </div>
   );
