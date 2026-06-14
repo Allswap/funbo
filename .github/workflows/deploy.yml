@@ -6,20 +6,22 @@ on:
   workflow_dispatch:
 
 env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLAR_WORKERS_API }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   workers:
     name: Deploy Workers
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         dir: [funbo, funbo-discovery, funbo-execution, funbo-analytics]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Deploy ${{ matrix.dir }}
         run: npx wrangler deploy
         working-directory: worker/${{ matrix.dir }}

@@ -42,6 +42,8 @@
     { "binding": "DISCOVERY_WORKER", "service": "funbo-discovery" }
   ],
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "EXECUTION_WORKER_URL": "https://funbo-execution.nobtx-io.workers.dev",
+    "DISCOVERY_WORKER_URL": "https://funbo-discovery.nobtx-io.workers.dev"
   }
 }
