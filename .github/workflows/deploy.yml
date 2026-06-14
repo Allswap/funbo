@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TOKEN }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
       - name: Debug secret
-        run: echo "HAS_SECRET=${{ secrets.CLOUDFLARE_API_TOKEN != '' }}"
+        run: echo "HAS_SECRET=${{ secrets.CF_TOKEN != '' }}"
       - name: Deploy ${{ matrix.dir }}
         run: npx wrangler deploy
         working-directory: worker/${{ matrix.dir }}
