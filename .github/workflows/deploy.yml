@@ -22,12 +22,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Debug secret
-        run: |
-          echo "HAS_CF_TOKEN=${{ secrets.CF_TOKEN != '' }}"
-          echo "HAS_GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN != '' }}"
-          echo "TRIGGER=${{ github.event_name }}"
-          echo "REF=${{ github.ref }}"
+      - name: Install deps
+        run: npm ci
+        working-directory: worker/${{ matrix.dir }}
       - name: Deploy ${{ matrix.dir }}
         run: npx wrangler deploy
         working-directory: worker/${{ matrix.dir }}
