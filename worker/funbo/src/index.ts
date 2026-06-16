@@ -189,7 +189,7 @@ async function probeRpc(url: string, timeoutMs = 2500): Promise<{ ok: boolean; l
 
 const DEFAULT_POOLS: Record<number, string[]> = {
    1: ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org', 'https://1rpc.io/eth', 'https://rpc.blockscout.com/eth'],
-   137: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org', 'https://rpc.blockscout.com/polygon'],
+    137: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org', 'https://rpc.blockscout.com/polygon', 'https://polygon-mainnet.core.chainstack.com/8dff6ff47187271e7b9873336e77f749'],
    42161: ['https://arbitrum-rpc.publicnode.com', 'https://arbitrum.drpc.org', 'https://arb1.arbitrum.io/rpc', 'https://rpc.blockscout.com/arbitrum'],
    10: ['https://optimism-rpc.publicnode.com', 'https://optimism.drpc.org', 'https://mainnet.optimism.io', 'https://rpc.blockscout.com/optimism'],
    8453: ['https://base-rpc.publicnode.com', 'https://base.drpc.org', 'https://mainnet.base.org', 'https://rpc.blockscout.com/base'],

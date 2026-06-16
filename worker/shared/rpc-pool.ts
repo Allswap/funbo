@@ -12,11 +12,12 @@ const DEFAULT_POOLS: Record<number, string[]> = {
      'https://1rpc.io/eth',
      'https://rpc.blockscout.com/eth',
    ],
-   137: [
-     'https://polygon-bor-rpc.publicnode.com',
-     'https://polygon.drpc.org',
-     'https://rpc.blockscout.com/polygon',
-   ],
+    137: [
+      'https://polygon-bor-rpc.publicnode.com',
+      'https://polygon.drpc.org',
+      'https://rpc.blockscout.com/polygon',
+      'https://polygon-mainnet.core.chainstack.com/8dff6ff47187271e7b9873336e77f749',
+    ],
    80002: [
      'https://polygon-bor-rpc.publicnode.com',
      'https://polygon-amoy.drpc.org',
@@ -168,6 +169,7 @@ export function classifyProvider(url: string): string | null {
   if (lower.includes('drpc')) return 'drpc';
   if (lower.includes('blockscout.com')) return 'blockscout';
   if (lower.includes('1rpc.io')) return '1rpc';
+  if (lower.includes('chainstack.com')) return 'chainstack';
   if (lower.includes('ankr.com')) return 'ankr';
   if (lower.includes('getblock.io')) return 'getblock';
   if (lower.includes('nownodes.io')) return 'nownodes';
@@ -202,6 +204,7 @@ export function urlQuotaTier(url: string): number {
     case '1rpc':
       return 0;
     case 'ankr':
+    case 'chainstack':
       return 1;
     case 'getblock':
       return 2;
