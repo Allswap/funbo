@@ -66,65 +66,68 @@ app.post('/api/cron/execute', async (c) => {
   return c.json({ success: true, message: 'Execution triggered', triggered: 'external' });
 });
 
+async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserted: number; executed: number }> {
+  const DB = env['funbo-db'];
+  const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
+  if (!network?.rpc_url) return { inserted: 0, executed: 0 };
+  const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as { value: string } | null;
+  const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.5;
+  const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as { value: string } | null;
+  const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 1000;
+  const tradeAmountRes = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as { value: string } | null;
+  const tradeAmount = tradeAmountRes?.value || '0.1';
+  const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
+  const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
+  const _rpcUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
+  if (!_rpcUrl) return { inserted: 0, executed: 0 };
+  const maxPairsPerRun = 4;
+  const maxRouterPairsPerPair = 5;
+  let inserted = 0;
+  if (routers.results.length >= 2 && pairs.results.length > 0) {
+    const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+    for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
+      const pair = pairs.results[pIdx];
+      let routerPairsDone = 0;
+      for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair; i++) {
+        for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair; j++) {
+          const [quoteA, quoteB] = await Promise.all([
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env),
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env),
+          ]);
+          if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
+          const bestOut = quoteA > quoteB ? quoteA : quoteB;
+          const worstOut = quoteA > quoteB ? quoteB : quoteA;
+          if (worstOut === 0n) continue;
+          const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
+          if (profitBps < minProfitPct) continue;
+          const buyRouter = quoteA > quoteB ? validRouters[i] : validRouters[j];
+          const sellRouter = quoteA > quoteB ? validRouters[j] : validRouters[i];
+          await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
+            .bind(chainId, buyRouter.address, sellRouter.address, pair.token_a, pair.token_b, tradeAmount, profitBps).run();
+          inserted++;
+          routerPairsDone++;
+        }
+      }
+    }
+  }
+  await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
+    .bind('last_auto_scan', new Date().toISOString(), new Date().toISOString()).run();
+  if (inserted > 0) {
+    const opportunities = await DB.prepare('SELECT * FROM opportunities WHERE chain_id = ? AND created_at >= datetime("now", "-5 minutes") AND profit_pct >= ? ORDER BY created_at DESC')
+      .bind(chainId, minProfitPct).all();
+    await logScanResult(env, chainId, 'cross-dex', opportunities.results || []);
+  }
+  const execResult = await executePendingOpportunities(env);
+  console.log(`[executor] scan-and-execute: chain=${chainId} inserted=${inserted} executed=${execResult.executed}`);
+  return { inserted, executed: execResult.executed };
+}
+
 app.post('/api/cron/scan-and-execute', async (c) => {
   const body = await safeJson(c);
   const { chainId } = body as { chainId?: number } || {};
   if (!chainId) return c.json({ error: 'chainId required' }, 400);
   if (!(await dedupCronRun(c.env['funbo-db'], 'scan_execute', 20))) return c.json({ success: true, message: 'Skipped: already ran recently' });
-  c.executionCtx.waitUntil((async () => {
-    const DB = c.env['funbo-db'];
-    const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
-    if (!network?.rpc_url) return;
-    const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as { value: string } | null;
-    const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.5;
-    const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as { value: string } | null;
-    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 1000;
-    const tradeAmountRes = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as { value: string } | null;
-    const tradeAmount = tradeAmountRes?.value || '0.1';
-    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
-    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
-    const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
-    if (!_rpcUrl) return;
-    const maxPairsPerRun = 4;
-    const maxRouterPairsPerPair = 5;
-    let inserted = 0;
-    if (routers.results.length >= 2 && pairs.results.length > 0) {
-      const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-      for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
-        const pair = pairs.results[pIdx];
-        let routerPairsDone = 0;
-        for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair; i++) {
-          for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair; j++) {
-            const [quoteA, quoteB] = await Promise.all([
-              rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, c.env),
-              rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, c.env),
-            ]);
-            if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
-            const bestOut = quoteA > quoteB ? quoteA : quoteB;
-            const worstOut = quoteA > quoteB ? quoteB : quoteA;
-            if (worstOut === 0n) continue;
-            const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
-            if (profitBps < minProfitPct) continue;
-            const buyRouter = quoteA > quoteB ? validRouters[i] : validRouters[j];
-            const sellRouter = quoteA > quoteB ? validRouters[j] : validRouters[i];
-            await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
-              .bind(chainId, buyRouter.address, sellRouter.address, pair.token_a, pair.token_b, tradeAmount, profitBps).run();
-            inserted++;
-            routerPairsDone++;
-          }
-        }
-      }
-    }
-    await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
-      .bind('last_auto_scan', new Date().toISOString(), new Date().toISOString()).run();
-    if (inserted > 0) {
-      const opportunities = await DB.prepare('SELECT * FROM opportunities WHERE chain_id = ? AND created_at >= datetime("now", "-5 minutes") AND profit_pct >= ? ORDER BY created_at DESC')
-        .bind(chainId, minProfitPct).all();
-      await logScanResult(c.env, chainId, 'cross-dex', opportunities.results || []);
-    }
-    const execResult = await executePendingOpportunities(c.env);
-    console.log(`[executor] scan-and-execute: inserted=${inserted} executed=${execResult.executed}`);
-  })());
+  c.executionCtx.waitUntil(scanAndExecuteChain(c.env, chainId));
   return c.json({ success: true, message: 'Scan + execution triggered' });
 });
 
@@ -283,13 +286,8 @@ export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionC
         const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
         for (const net of networks.results) {
           try {
-            const res = await fetch(`http://localhost/api/cron/scan-and-execute`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chainId: net.chain_id })
-            });
-            const data = await res.json() as { success?: boolean };
-            console.log(`[scanner] chain ${net.chain_id} scan triggered: ${data.success}`);
+            const result = await scanAndExecuteChain(env, net.chain_id);
+            console.log(`[scanner] chain ${net.chain_id} done: inserted=${result.inserted} executed=${result.executed}`);
           } catch (e) {
             console.error(`[scanner] chain ${net.chain_id} scan failed:`, e);
             await logError(env, 'funbo-execution', `chain ${net.chain_id} scan failed: ${(e as Error).message}`, { level: 'error', details: { cron: '*/20', chain_id: net.chain_id }, worker: 'funbo-execution' });
