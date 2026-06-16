@@ -4,7 +4,7 @@ import { dexscreenerGetPools, goplusBatchTokenSafety, isWellKnownToken, SafetyRe
 import { ethers } from 'ethers';
 import { getSwapQuote, getPactSwapTokenType, STABLECOIN_SYMBOLS, PACT_SWAP_CHAIN_TYPES } from '../../shared/pactswap';
 import { analyzeDiscoveredPairs } from './ai-discovery';
-import { encodeV3Path, getWorkingRpcUrl } from '../../shared/rpc-pool';
+import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 
 async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
@@ -997,10 +997,18 @@ export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionC
   if (event.cron === '*/30 * * * *') {
     try {
       await runSpotStrategiesScan(DB, polygon, env);
-    } catch (e) { console.error('[discovery] */30 spot scan failed:', e); }
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error('[discovery] */30 spot scan failed:', e);
+      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '*/30', scan: 'spot-strategies' }, worker: 'funbo-discovery', chain_id: 137 });
+    }
     try {
       await runCrossDexScan(DB, polygon, env);
-    } catch (e) { console.error('[discovery] */30 cross-dex scan failed:', e); }
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error('[discovery] */30 cross-dex scan failed:', e);
+      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '*/30', scan: 'cross-dex' }, worker: 'funbo-discovery', chain_id: 137 });
+    }
     return;
   }
 
@@ -1062,7 +1070,11 @@ export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionC
           }
         })());
       }
-    } catch (e) { console.error('[discovery] hourly cron failed:', e); }
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error('[discovery] hourly cron failed:', e);
+      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '0 * * * *', scan: 'hourly-discovery' }, worker: 'funbo-discovery' });
+    }
   }
 }
 

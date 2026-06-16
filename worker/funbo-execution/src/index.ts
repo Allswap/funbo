@@ -3,7 +3,7 @@ import { initDB } from './db';
 import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult } from './bot-engine';
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
-import { encodeV3Path, getWorkingRpcUrl } from '../../shared/rpc-pool';
+import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 
 async function hashApiKey(apiKey: string): Promise<string> {
@@ -283,21 +283,27 @@ export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionC
         const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
         for (const net of networks.results) {
           try {
-            const res = await fetch(`http://localhost/api/opportunities/scan`, {
+            const res = await fetch(`http://localhost/api/cron/scan-and-execute`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chainId: net.chain_id, executeImmediately: true })
+              body: JSON.stringify({ chainId: net.chain_id })
             });
-            const data = await res.json() as { discovered?: number; executed?: number };
-            console.log(`[scanner] chain ${net.chain_id} scan: discovered ${data.discovered}, executed ${data.executed}`);
-          } catch (e) { console.error(`[scanner] chain ${net.chain_id} scan failed:`, e); }
+            const data = await res.json() as { success?: boolean };
+            console.log(`[scanner] chain ${net.chain_id} scan triggered: ${data.success}`);
+          } catch (e) {
+            console.error(`[scanner] chain ${net.chain_id} scan failed:`, e);
+            await logError(env, 'funbo-execution', `chain ${net.chain_id} scan failed: ${(e as Error).message}`, { level: 'error', details: { cron: '*/20', chain_id: net.chain_id }, worker: 'funbo-execution' });
+          }
         }
       } else if (event.cron === '*/15 * * * *') {
         if (!(await dedupCronRun(env['funbo-db'], 'execute', 15))) return;
         const execResult = await executePendingOpportunities(env);
         console.log(`[executor] auto-executed ${execResult.executed} opportunities`);
       }
-    } catch (e) { console.error('[executor] scheduled failed:', e); }
+    } catch (e) {
+      console.error('[executor] scheduled failed:', e);
+      await logError(env, 'funbo-execution', `scheduled failed: ${(e as Error).message}`, { level: 'error', details: { cron: event.cron }, worker: 'funbo-execution' });
+    }
   })());
 }
 
