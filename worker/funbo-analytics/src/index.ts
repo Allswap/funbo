@@ -11,12 +11,30 @@ async function safeJson(c: any): Promise<Record<string, unknown> | null> {
 
 const app = new Hono<{ Bindings: Env }>();
 
+async function hashApiKey(apiKey: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(apiKey);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 app.use('*', async (c, next) => {
   const origin = c.env.CORS_ORIGIN || '*';
   c.header('Access-Control-Allow-Origin', origin);
   c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
+
+  const path = c.req.path.replace(/\/+/g, '/');
+  const publicPaths = ['/api/health', '/api/cron/analytics', '/api/cron/cleanup'];
+  if (publicPaths.includes(path)) { await initDB(c.env); return next(); }
+
+  const apiKey = c.req.header('X-API-Key');
+  if (!apiKey) return c.json({ error: 'Missing X-API-Key' }, 401);
+  const DB = c.env['funbo-db'];
+  const keyHash = await hashApiKey(apiKey);
+  const validKey = await DB.prepare('SELECT id FROM api_keys WHERE key_hash = ? AND is_active = 1').bind(keyHash).first();
+  if (!validKey) return c.json({ error: 'Invalid or expired API Key' }, 403);
   await initDB(c.env);
   return next();
 });

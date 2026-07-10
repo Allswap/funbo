@@ -24,6 +24,8 @@ const MIGRATIONS = [
   { id: '023_add_mm_ref_price_trade_amount', sql: `ALTER TABLE mm_lp_configs ADD COLUMN reference_price TEXT; ALTER TABLE mm_lp_configs ADD COLUMN trade_amount TEXT DEFAULT '10';` },
   { id: '024_add_opportunities_error_msg', sql: `ALTER TABLE opportunities ADD COLUMN error_msg TEXT;` },
   { id: '025_create_error_logs_table', sql: `CREATE TABLE IF NOT EXISTS error_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, level TEXT NOT NULL DEFAULT 'error', message TEXT NOT NULL, details TEXT, chain_id INTEGER, worker TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at DESC); CREATE INDEX IF NOT EXISTS idx_error_logs_source ON error_logs(source);` },
+  { id: '026_add_token_pairs_unique_index', sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_pairs_chain_ab ON token_pairs(chain_id, token_a, token_b);` },
+  { id: '027_seed_networks_config', sql: `INSERT OR IGNORE INTO networks (chain_id, name, rpc_url, explorer_url, is_active) VALUES (137, 'Polygon', 'https://polygon-bor-rpc.publicnode.com', 'https://polygonscan.com', 1); INSERT OR IGNORE INTO config (key, value) VALUES ('min_profit_pct', '0.5'), ('trade_amount', '0.1'), ('default_fee_tier', '3000'), ('min_net_profit_pct', '0.15'), ('min_slippage', '1'), ('daily_loss_limit', '5.0');` },
 ];
 
 const TABLE_SCHEMAS = [

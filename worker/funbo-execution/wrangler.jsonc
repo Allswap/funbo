@@ -30,6 +30,6 @@
     "enabled": true
   },
   "triggers": {
-    "crons": ["*/15 * * * *", "*/20 * * * *"]
+    "crons": []
   }
 }

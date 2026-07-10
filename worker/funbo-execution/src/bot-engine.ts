@@ -196,7 +196,6 @@ async function executeAndRecordTransaction(
       data: l.data,
     })));
 
-    await updateBotTransaction(env, 0, {}); // dummy to trigger update logic
     const db = env['funbo-db'];
     await db.prepare(`
       UPDATE bot_transactions SET

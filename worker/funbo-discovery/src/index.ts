@@ -96,12 +96,30 @@ async function autoCreateDexRouter(DB: D1Database, chainId: number, dexName: str
 
 const app = new Hono<{ Bindings: Env }>();
 
+async function hashApiKey(apiKey: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(apiKey);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 app.use('*', async (c, next) => {
   const origin = c.env.CORS_ORIGIN || '*';
   c.header('Access-Control-Allow-Origin', origin);
   c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
+
+  const path = c.req.path.replace(/\/+/g, '/');
+  const publicPaths = ['/api/health', '/api/cron/spot-strategies', '/api/cron/cross-dex', '/api/cron/hourly-discovery'];
+  if (publicPaths.includes(path)) return next();
+
+  const apiKey = c.req.header('X-API-Key');
+  if (!apiKey) return c.json({ error: 'Missing X-API-Key' }, 401);
+  const DB = c.env['funbo-db'];
+  const keyHash = await hashApiKey(apiKey);
+  const validKey = await DB.prepare('SELECT id FROM api_keys WHERE key_hash = ? AND is_active = 1').bind(keyHash).first();
+  if (!validKey) return c.json({ error: 'Invalid or expired API Key' }, 403);
   return next();
 });
 
@@ -452,7 +470,8 @@ app.post('/api/cron/cross-dex', async (c) => {
   const body = await safeJson(c);
   const { shard, totalShards } = body as { shard?: number; totalShards?: number } || {};
   const DB = c.env['funbo-db'];
-  if (!(await dedupCronRun(DB, 'cross_dex', 15))) return c.json({ success: true, message: 'Skipped: already ran recently' });
+  const shardKey = `cross_dex_shard${shard || 1}`;
+  if (!(await dedupCronRun(DB, shardKey, 15))) return c.json({ success: true, message: 'Skipped: already ran recently' });
   const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
   const polygon = networks.results.filter((n: any) => n.chain_id === 137);
   if (polygon.length === 0) return c.json({ error: 'No polygon network' }, 400);
@@ -820,8 +839,8 @@ async function scanCrossChainArb(DB: any, networks: any[], feeTier: number): Pro
 }
 
 async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular = false, shard: number = 1, totalShards: number = 1): Promise<void> {
-  const maxPairsPerRun = 4;
-  const maxRouterPairsPerPair = 5;
+  const maxPairsPerRun = 20;
+  const maxRouterPairsPerPair = 10;
   const rpcDelayMs = 30;
 
   for (const net of networks) {
@@ -986,96 +1005,8 @@ async function runHourlyDiscovery(DB: any, env: Env) {
 }
 
 export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  const DB = env['funbo-db'];
-  if (!DB) return;
-
-  const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
-  if (networks.results.length === 0) return;
-  const polygon = networks.results.filter((n: any) => n.chain_id === 137);
-  if (polygon.length === 0) return;
-
-  if (event.cron === '*/30 * * * *') {
-    try {
-      await runSpotStrategiesScan(DB, polygon, env);
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error('[discovery] */30 spot scan failed:', e);
-      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '*/30', scan: 'spot-strategies' }, worker: 'funbo-discovery', chain_id: 137 });
-    }
-    try {
-      await runCrossDexScan(DB, polygon, env);
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error('[discovery] */30 cross-dex scan failed:', e);
-      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '*/30', scan: 'cross-dex' }, worker: 'funbo-discovery', chain_id: 137 });
-    }
-    return;
-  }
-
-  if (event.cron === '0 * * * *') {
-    if (!(await dedupCronRun(DB, 'hourly_discovery', 60))) return;
-    try {
-      const res = await DB.prepare('SELECT * FROM discovery_pools WHERE is_active = 1').all();
-      const pools = (res.results as Record<string, unknown>[]) ?? [];
-      const allScheduledPairs: DiscoveredPair[] = [];
-
-      for (const pool of pools) {
-        const p = pool as { id: number; chain_id: number; api_url: string; source_type: string };
-        let pairs: DiscoveredPair[] = [];
-        if (p.source_type === 'gecko') {
-          pairs = await fetchGecko(p.chain_id, p.api_url);
-        } else if (p.source_type === 'defillama') {
-          pairs = await fetchDefiLlama(p.chain_id, p.api_url);
-        } else if (p.source_type === 'dexscreener') {
-          pairs = await dexscreenerGetPools(p.chain_id, p.api_url);
-        }
-
-        for (const pair of pairs) {
-          if (pair.dexLabel) {
-            await autoCreateDexRouter(DB, p.chain_id, pair.dexLabel);
-          }
-        }
-
-        const allTokens = new Set<string>();
-        for (const pair of pairs) { allTokens.add(pair.tokenA.toLowerCase()); allTokens.add(pair.tokenB.toLowerCase()); }
-        const securityMap = await goplusBatchTokenSafety(env, p.chain_id, [...allTokens]);
-
-        for (const pair of pairs) {
-          try {
-            const sa = securityMap.get(pair.tokenA.toLowerCase());
-            const sb = securityMap.get(pair.tokenB.toLowerCase());
-            await upsertTokenPair(DB, p.chain_id, pair.tokenA, pair.tokenB, {
-              label: pair.label,
-              dexLabel: pair.dexLabel,
-              securityChecked: 1,
-              securityInfo: JSON.stringify({
-                tokenA: { safe: sa?.safe, reason: sa?.reason },
-                tokenB: { safe: sb?.safe, reason: sb?.reason },
-              }),
-            });
-            allScheduledPairs.push(pair);
-          } catch {}
-        }
-
-        await DB.prepare('UPDATE discovery_pools SET last_run = CURRENT_TIMESTAMP WHERE id = ?').bind(p.id).run();
-      }
-
-      if (allScheduledPairs.length > 0 && env.AI) {
-        ctx.waitUntil((async () => {
-          const results = await analyzeDiscoveredPairs(DB, env.AI!, 0, allScheduledPairs);
-          for (const r of results) {
-            await DB.prepare(
-              'INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
-            ).bind(`ai_discovery_${r.pairKey}`, JSON.stringify(r), JSON.stringify(r)).run();
-          }
-        })());
-      }
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error('[discovery] hourly cron failed:', e);
-      await logError(env, 'funbo-discovery', msg, { level: 'error', details: { cron: '0 * * * *', scan: 'hourly-discovery' }, worker: 'funbo-discovery' });
-    }
-  }
+  // Native crons removed — GH Actions handles all scheduling via HTTP endpoints.
+  // This handler is kept as a no-op in case native crons are re-enabled.
 }
 
 export default { fetch: app.fetch, scheduled };

@@ -80,8 +80,8 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
   const _rpcUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
   if (!_rpcUrl) return { inserted: 0, executed: 0 };
-  const maxPairsPerRun = 4;
-  const maxRouterPairsPerPair = 5;
+    const maxPairsPerRun = 20;
+    const maxRouterPairsPerPair = 10;
   let inserted = 0;
   if (routers.results.length >= 2 && pairs.results.length > 0) {
     const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
@@ -182,7 +182,7 @@ app.get('/api/bot/status', async (c) => {
 async function executePendingOpportunities(env: Env): Promise<any> {
   const DB = env['funbo-db'];
   await DB.prepare("UPDATE opportunities SET status = 'skipped', error_msg = 'Stale: pending >1h' WHERE status = 'pending' AND created_at < datetime('now', '-1 hour')").run();
-  const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 2').all() as { results: any[] };
+  const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 5').all() as { results: any[] };
   console.log(`[executor] found ${pending.results.length} pending opps`);
   if (pending.results.length === 0) return { success: true, message: 'No pending opportunities.', executed: 0 };
   for (const opp of pending.results) {
@@ -278,31 +278,8 @@ async function executePendingOpportunities(env: Env): Promise<any> {
 
 export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   await initDB(env);
-  ctx.waitUntil((async () => {
-    try {
-      if (event.cron === '*/20 * * * *') {
-        if (!(await dedupCronRun(env['funbo-db'], 'scan_execute', 20))) return;
-        const DB = env['funbo-db'];
-        const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
-        for (const net of networks.results) {
-          try {
-            const result = await scanAndExecuteChain(env, net.chain_id);
-            console.log(`[scanner] chain ${net.chain_id} done: inserted=${result.inserted} executed=${result.executed}`);
-          } catch (e) {
-            console.error(`[scanner] chain ${net.chain_id} scan failed:`, e);
-            await logError(env, 'funbo-execution', `chain ${net.chain_id} scan failed: ${(e as Error).message}`, { level: 'error', details: { cron: '*/20', chain_id: net.chain_id }, worker: 'funbo-execution' });
-          }
-        }
-      } else if (event.cron === '*/15 * * * *') {
-        if (!(await dedupCronRun(env['funbo-db'], 'execute', 15))) return;
-        const execResult = await executePendingOpportunities(env);
-        console.log(`[executor] auto-executed ${execResult.executed} opportunities`);
-      }
-    } catch (e) {
-      console.error('[executor] scheduled failed:', e);
-      await logError(env, 'funbo-execution', `scheduled failed: ${(e as Error).message}`, { level: 'error', details: { cron: event.cron }, worker: 'funbo-execution' });
-    }
-  })());
+  // Native crons removed — GH Actions handles all scheduling via HTTP endpoints.
+  // This handler is kept as a no-op in case native crons are re-enabled.
 }
 
 export default { fetch: app.fetch, scheduled };

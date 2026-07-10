@@ -33,7 +33,7 @@ export async function runAiAdvisor(env: Env): Promise<AiSuggestion[]> {
   ).all();
 
   const notifSettings = await DB.prepare(
-    "SELECT key, value FROM config WHERE key NOT LIKE 'ai_suggest_%'"
+    "SELECT key, value FROM config WHERE key NOT LIKE 'ai_suggest_%' AND key NOT IN ('system_api_key', 'default_password', 'blockscout_api_key', 'signer_private_key', 'bot_secret')"
   ).all();
   const notifMap: Record<string, string> = {};
   for (const row of notifSettings.results as Record<string, unknown>[]) { notifMap[row.key as string] = row.value as string; }
