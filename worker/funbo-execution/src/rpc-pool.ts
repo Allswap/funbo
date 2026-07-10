@@ -15,7 +15,7 @@ const RPC_HEADERS = {
 export type { NodeHealth } from '../../shared/rpc-pool';
 export { getHealthyRpcPool, markNodeHealth, buildChainFallbackPool } from '../../shared/rpc-pool';
 
-async function probeRpc(url: string, timeoutMs = 2500): Promise<{ ok: boolean; latencyMs: number; isAuthError?: boolean }> {
+async function probeRpc(url: string, timeoutMs = 5000): Promise<{ ok: boolean; latencyMs: number; isAuthError?: boolean }> {
   const rpcService = `rpc:${url}`;
   const status = getRateLimitStatus(rpcService);
   if (!status.allowed) {
@@ -41,7 +41,7 @@ async function probeRpc(url: string, timeoutMs = 2500): Promise<{ ok: boolean; l
     try {
       const json = await res.clone().json() as any;
       if (json.error) {
-        return { ok: false, latencyMs: ms, isAuthError: true };
+        return { ok: false, latencyMs: ms };
       }
     } catch { return { ok: false, latencyMs: ms }; }
     recordSuccess(rpcService);
