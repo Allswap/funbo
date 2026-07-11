@@ -16,7 +16,7 @@ api.interceptors.request.use((config) => {
 });
 
 export const networkService = {
-  add: (data: { chainId: number; name: string; rpcUrl: string; explorerUrl?: string }) =>
+  add: (data: { chainId: number; name: string; rpcUrl: string; explorerUrl?: string; mevProtectedRpc?: string }) =>
     api.post('/api/networks', data),
   remove: (chainId: number) =>
     api.delete(`/api/networks/${chainId}`),

@@ -8,6 +8,8 @@ export function ConfigManager() {
     min_profit_pct: '',
     max_profit_pct: '',
     min_net_profit_pct: '',
+    min_profit_pct_triangular: '',
+    trade_amount: '',
     max_trade_decimals: '',
     daily_loss_limit: '',
     min_slippage: '',
@@ -69,11 +71,14 @@ export function ConfigManager() {
     setConfig(prev => ({ ...prev, [key]: value }));
   };
 
+  const SECRET_KEYS = ['system_api_key', 'default_password', 'blockscout_api_key'];
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await Promise.all(
         Object.entries(config)
+          .filter(([key, value]) => !(SECRET_KEYS.includes(key) && (!value || value === '')))
           .map(([key, value]) => configService.set(key, value ?? ''))
       );
       alert('Configuration saved!');
@@ -226,6 +231,22 @@ export function ConfigManager() {
             onChange={e => handleChange('min_net_profit_pct', e.target.value)}
             className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
           <p className="text-xs text-gray-500 mt-1">Minimum net profit after gas costs. Bot skips trades where net profit under threshold.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">Triangular Arb Min Profit (%)</label>
+          <input type="number" step="0.1" value={config.min_profit_pct_triangular}
+            onChange={e => handleChange('min_profit_pct_triangular', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
+          <p className="text-xs text-gray-500 mt-1">Min profit for 3-token loop arbitrage. Lower than cross-dex since triangular has lower gas.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">Trade Amount</label>
+          <input type="text" value={config.trade_amount}
+            onChange={e => handleChange('trade_amount', e.target.value)}
+            className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none" />
+          <p className="text-xs text-gray-500 mt-1">Amount in native token (e.g. 0.1 WMATIC) for each trade.</p>
         </div>
 
         <div>

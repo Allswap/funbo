@@ -24,6 +24,11 @@ const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0x0ffd9608223830edec42d8498c23fc48368dc4dc', // SCR
     '0xb0897686c545042afc77c20201758a0b201b33a3', // LINK (PoS extra)
     '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
+    '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT
+    '0xd6df932a45c0f255f85145f286ea0b292b21c90b', // AAVE
+    '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', // SUSHI
+    '0xb33eaad8d922b1083446dc23f610c2567fb5180f', // UNI
+    '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // CRV
   ]),
   80002: new Set([
     '0x9c3c9283d3e44854697cd22d3faa240cfb032889', // WMATIC Amoy

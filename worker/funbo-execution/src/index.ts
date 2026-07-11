@@ -4,7 +4,7 @@ import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFro
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
-import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT } from '../../shared/quotes';
+import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 
 async function hashApiKey(apiKey: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(apiKey);
@@ -147,15 +147,70 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
       console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} done: attempts=${pairTotalAttempts} quoteHits=${pairQuoteHits} inserted=${inserted}`);
     }
   }
+
+  let triInserted = 0;
+  const triMinProfitPct = parseFloat((await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct_triangular"').first() as any)?.value || '0.2');
+  const v2Routers = routers.results.filter((r: any) => r.address && r.version === 'v2');
+  if (v2Routers.length >= 2 && pairs.results.length >= 3) {
+    const adj = new Map<string, { token: string; pair: any }[]>();
+    for (const p of pairs.results) {
+      const a = p.token_a.toLowerCase();
+      const b = p.token_b.toLowerCase();
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a)!.push({ token: b, pair: p });
+      adj.get(b)!.push({ token: a, pair: p });
+    }
+    const testedTriangles = new Set<string>();
+    for (const [tA, neighbors] of adj) {
+      for (const { token: tB } of neighbors) {
+        const neighborsB = adj.get(tB);
+        if (!neighborsB) continue;
+        for (const { token: tC } of neighborsB) {
+          if (tC === tA || tC === tB) continue;
+          const neighborsC = adj.get(tC);
+          if (!neighborsC || !neighborsC.some(n => n.token === tA)) continue;
+          const triKey = [tA, tB, tC].sort().join(':');
+          if (testedTriangles.has(triKey)) continue;
+          testedTriangles.add(triKey);
+
+          let bestProfit = 0;
+          let bestRouter = v2Routers[0];
+          for (const router of v2Routers) {
+            const qAB = await rawQuoteRoute(workingRpcs[rpcIdx % workingRpcs.length], tA, tB, router, feeTier, env);
+            if (!qAB || qAB === 0n) continue;
+            const rpcBC = workingRpcs[rpcIdx % workingRpcs.length];
+            const qBC = await rawQuoteRoute(rpcBC, tB, tC, router, feeTier, env);
+            if (!qBC || qBC === 0n) continue;
+            const rpcCA = workingRpcs[rpcIdx % workingRpcs.length];
+            const qCA = await rawQuoteRoute(rpcCA, tC, tA, router, feeTier, env);
+            if (!qCA || qCA === 0n) continue;
+            const profitPct = Number((qCA - DEFAULT_AMOUNT_IN) * 10000n / DEFAULT_AMOUNT_IN) / 100;
+            if (profitPct > bestProfit) {
+              bestProfit = profitPct;
+              bestRouter = router;
+            }
+          }
+          if (bestProfit >= triMinProfitPct) {
+            await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
+              .bind(chainId, bestRouter.address, bestRouter.address, tA, tB, tradeAmount, bestProfit).run();
+            triInserted++;
+            console.log(`[scan:${SCAN_VERSION}] TRIANGLE ${tA.slice(0,8)}→${tB.slice(0,8)}→${tC.slice(0,8)} profit=${bestProfit}% router=${bestRouter.name}`);
+          }
+        }
+      }
+    }
+  }
+
   await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
     .bind('last_auto_scan', new Date().toISOString(), new Date().toISOString()).run();
-  if (inserted > 0) {
+  if (inserted + triInserted > 0) {
     const opportunities = await DB.prepare('SELECT * FROM opportunities WHERE chain_id = ? AND created_at >= datetime("now", "-5 minutes") AND profit_pct >= ? ORDER BY created_at DESC')
       .bind(chainId, minProfitPct).all();
     await logScanResult(env, chainId, 'cross-dex', opportunities.results || []);
   }
-  console.log(`[executor] scan-and-execute: chain=${chainId} inserted=${inserted}`);
-  return { inserted, executed: 0 };
+  console.log(`[executor] scan-and-execute: chain=${chainId} crossDex=${inserted} triangular=${triInserted}`);
+  return { inserted: inserted + triInserted, executed: 0 };
 }
 
 app.post('/api/cron/scan-and-execute', async (c) => {

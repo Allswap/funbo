@@ -25,7 +25,24 @@ const MIGRATIONS = [
   { id: '024_add_opportunities_error_msg', sql: `ALTER TABLE opportunities ADD COLUMN error_msg TEXT;` },
   { id: '025_create_error_logs_table', sql: `CREATE TABLE IF NOT EXISTS error_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, level TEXT NOT NULL DEFAULT 'error', message TEXT NOT NULL, details TEXT, chain_id INTEGER, worker TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at DESC); CREATE INDEX IF NOT EXISTS idx_error_logs_source ON error_logs(source);` },
   { id: '026_add_token_pairs_unique_index', sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_pairs_chain_ab ON token_pairs(chain_id, token_a, token_b);` },
-  { id: '027_seed_networks_config', sql: `INSERT OR IGNORE INTO networks (chain_id, name, rpc_url, explorer_url, is_active) VALUES (137, 'Polygon', 'https://polygon-bor-rpc.publicnode.com', 'https://polygonscan.com', 1); INSERT OR IGNORE INTO config (key, value) VALUES ('min_profit_pct', '0.5'), ('trade_amount', '0.1'), ('default_fee_tier', '3000'), ('min_net_profit_pct', '0.15'), ('min_slippage', '1'), ('daily_loss_limit', '5.0');` },
+  { id: '027_seed_networks_config', sql: `INSERT OR IGNORE INTO networks (chain_id, name, rpc_url, explorer_url, is_active) VALUES (137, 'Polygon', 'https://polygon-bor-rpc.publicnode.com', 'https://polygonscan.com', 1); INSERT OR IGNORE INTO config (key, value) VALUES ('min_profit_pct', '0.5'), ('trade_amount', '0.1'), ('default_fee_tier', '3000'), ('min_net_profit_pct', '0.15'), ('min_slippage', '1'), ('daily_loss_limit', '5.0'), ('min_profit_pct_triangular', '0.3');` },
+  { id: '028_add_networks_mev_protected_rpc', sql: `ALTER TABLE networks ADD COLUMN mev_protected_rpc TEXT; UPDATE networks SET mev_protected_rpc = 'https://polygon.mevblocker.io' WHERE chain_id = 137;` },
+  { id: '029_add_thin_liquidity_pairs', sql: `
+    INSERT OR IGNORE INTO token_pairs (chain_id, token_a, token_b, label) VALUES
+    (137, '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', 'WMATIC/DAI'),
+    (137, '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', '0xd6df932a45c0f255f85145f286ea0b292b21c90b', 'WMATIC/AAVE'),
+    (137, '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619', '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', 'ETH/DAI'),
+    (137, '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'WBTC/USDC.e'),
+    (137, '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'SUSHI/USDC.e'),
+    (137, '0xb33eaad8d922b1083446dc23f610c2567fb5180f', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'UNI/USDC.e'),
+    (137, '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', 'CRV/DAI'),
+    (137, '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'SOL/USDC.e'),
+    (137, '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 'SUSHI/WMATIC'),
+    (137, '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6', '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619', 'WBTC/ETH'),
+    (137, '0xd6df932a45c0f255f85145f286ea0b292b21c90b', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'AAVE/USDC.e'),
+    (137, '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', 'WMATIC/USDT'),
+    (137, '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', 'ETH/USDT');
+  ` },
 ];
 
 const TABLE_SCHEMAS = [

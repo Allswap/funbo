@@ -119,11 +119,11 @@ async function ensureKeyExists(DB: any, apiKey: string, label: string) {
 app.post('/api/networks', async (c) => {
   const DB = c.env['funbo-db'];
   const body = await safeJson(c);
-  const { chainId, name, rpcUrl, explorerUrl } = body as { chainId?: number; name?: string; rpcUrl?: string; explorerUrl?: string } || {};
+  const { chainId, name, rpcUrl, explorerUrl, mevProtectedRpc } = body as { chainId?: number; name?: string; rpcUrl?: string; explorerUrl?: string; mevProtectedRpc?: string } || {};
   if (!chainId || !rpcUrl) return c.json({ error: 'Chain ID and RPC URL are required' }, 400);
   const existing = await DB.prepare('SELECT id FROM networks WHERE chain_id = ?').bind(chainId).first();
-  if (existing) { await DB.prepare('UPDATE networks SET rpc_url = ?, name = ?, explorer_url = ?, is_active = 1 WHERE chain_id = ?').bind(rpcUrl, name, explorerUrl || '', chainId).run(); return c.json({ success: true, message: 'Network updated' }); }
-  await DB.prepare('INSERT INTO networks (chain_id, name, rpc_url, explorer_url, is_active) VALUES (?, ?, ?, ?, 1)').bind(chainId, name, rpcUrl, explorerUrl || '').run();
+  if (existing) { await DB.prepare('UPDATE networks SET rpc_url = ?, name = ?, explorer_url = ?, mev_protected_rpc = ?, is_active = 1 WHERE chain_id = ?').bind(rpcUrl, name, explorerUrl || '', mevProtectedRpc || null, chainId).run(); return c.json({ success: true, message: 'Network updated' }); }
+  await DB.prepare('INSERT INTO networks (chain_id, name, rpc_url, explorer_url, mev_protected_rpc, is_active) VALUES (?, ?, ?, ?, ?, 1)').bind(chainId, name, rpcUrl, explorerUrl || '', mevProtectedRpc || null).run();
   return c.json({ success: true, message: 'Network added' });
 });
 app.get('/api/networks', async (c) => { const DB = c.env['funbo-db']; return c.json((await DB.prepare('SELECT * FROM networks ORDER BY chain_id').all()).results); });
