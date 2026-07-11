@@ -52,6 +52,77 @@ app.use('*', async (c, next) => {
 
 app.get('/api/health', (c) => c.json({ status: 'ok', worker: 'funbo-execution' }));
 
+app.get('/api/debug/scan-trace', async (c) => {
+  const DB = c.env['funbo-db'];
+  const chainId = 137;
+  const trace: any[] = [];
+  const push = (msg: string, data?: any) => trace.push({ t: Date.now(), msg, ...data });
+
+  try {
+    const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
+    push('network', { rpc_url: network?.rpc_url, exists: !!network });
+
+    const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
+    const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
+    const tradeAmountRow = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as any;
+    push('config', { min_profit_pct: minProfitRow?.value, fee_tier: feeTierRow?.value, trade_amount: tradeAmountRow?.value });
+
+    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
+    push('routers', { total: routers.results?.length, results: routers.results?.map((r: any) => ({ name: r.name, version: r.version, addr: r.address?.slice(0,10), quoter: r.quoter_address?.slice(0,10) })) });
+
+    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
+    push('pairs', { total: pairs.results?.length, first3: pairs.results?.slice(0,3).map((p: any) => ({ id: p.id, label: p.label, a: p.token_a?.slice(0,10), b: p.token_b?.slice(0,10) })) });
+
+    const rpcUrl = await getWorkingRpcUrl(c.env, chainId, network?.rpc_url || '');
+    push('rpcUrl', { url: rpcUrl?.slice(0, 50) });
+
+    if (!rpcUrl) { push('ERROR: no rpcUrl'); return c.json({ trace }); }
+
+    const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+    push('validRouters', { count: validRouters.length, names: validRouters.map((r: any) => r.name) });
+
+    const testPair = pairs.results?.[0];
+    if (!testPair) { push('ERROR: no pairs'); return c.json({ trace }); }
+    push('testPair', { id: testPair.id, label: testPair.label, a: testPair.token_a, b: testPair.token_b });
+
+    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 1000;
+
+    const testRouter = validRouters.find((r: any) => r.name === 'QuickSwap');
+    if (testRouter) {
+      push('testing_quote', { router: testRouter.name, version: testRouter.version, addr: testRouter.address });
+      try {
+        const q = await rawQuoteRoute(rpcUrl, testPair.token_a, testPair.token_b, testRouter, feeTier, c.env);
+        push('quote_result', { value: q?.toString(), isNull: q === null, isZero: q === 0n });
+      } catch (e: any) {
+        push('quote_error', { error: e.message });
+      }
+    }
+
+    const testRouter2 = validRouters.find((r: any) => r.name === 'Uniswap V2');
+    if (testRouter2) {
+      push('testing_quote2', { router: testRouter2.name, version: testRouter2.version, addr: testRouter2.address });
+      try {
+        const q2 = await rawQuoteRoute(rpcUrl, testPair.token_a, testPair.token_b, testRouter2, feeTier, c.env);
+        push('quote_result2', { value: q2?.toString(), isNull: q2 === null, isZero: q2 === 0n });
+      } catch (e: any) {
+        push('quote_error2', { error: e.message });
+      }
+    }
+
+    try {
+      const rawResult = await rawEthCall(rpcUrl, testRouter?.address || '', '0xd06ca61f0000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174', c.env);
+      push('rawEthCall_result', { result: rawResult?.slice(0, 40), isNull: rawResult === null });
+    } catch (e: any) {
+      push('rawEthCall_error', { error: e.message });
+    }
+
+  } catch (e: any) {
+    push('top_level_error', { error: e.message, stack: e.stack?.slice(0, 200) });
+  }
+
+  return c.json({ trace });
+});
+
 app.post('/api/bot/run', async (c) => {
   const result = await executePendingOpportunities(c.env);
   return c.json(result);
