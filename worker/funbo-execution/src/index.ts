@@ -316,7 +316,7 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
     const maxRouterPairsPerPair = 10;
   let inserted = 0;
   if (routers.results.length >= 2 && pairs.results.length > 0) {
-    const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+    const validRouters = routers.results.filter((r: any) => r.address && r.version === 'v2');
     console.log(`[scan:${SCAN_VERSION}] validRouters=${validRouters.map((r: any) => `${r.name}(${r.version})`).join(', ')}`);
     for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
       const pair = pairs.results[pIdx];
