@@ -18,11 +18,6 @@ const DEFAULT_POOLS: Record<number, string[]> = {
       'https://rpc.blockscout.com/polygon',
       'https://polygon-mainnet.core.chainstack.com/8dff6ff47187271e7b9873336e77f749',
     ],
-   80002: [
-     'https://polygon-bor-rpc.publicnode.com',
-     'https://polygon-amoy.drpc.org',
-     'https://rpc.blockscout.com/polygon-amoy',
-   ],
    42161: [
      'https://arbitrum-rpc.publicnode.com',
      'https://arbitrum.drpc.org',
@@ -60,7 +55,6 @@ export async function hashApiKey(apiKey: string): Promise<string> {
 const ANKR_CHAIN_NAMES: Record<number, string> = {
   1: 'eth',
   137: 'polygon',
-  80002: 'polygon_amoy',
   42161: 'arbitrum',
   10: 'optimism',
   8453: 'base',

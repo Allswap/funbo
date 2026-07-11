@@ -252,7 +252,7 @@ app.delete('/api/token-pairs/:id', async (c) => {
 
 
 const CHAIN_SLUGS: Record<number, string> = {
-  1: 'eth', 10: 'optimism', 137: 'polygon', 42161: 'arbitrum', 8453: 'base', 43114: 'avalanche', 56: 'bsc', 250: 'fantom', 80002: 'polygon_amoy', 84532: 'base',
+  1: 'eth', 10: 'optimism', 137: 'polygon', 42161: 'arbitrum', 8453: 'base', 43114: 'avalanche', 56: 'bsc', 250: 'fantom', 84532: 'base',
 };
 
 async function fetchGecko(chainId: number, apiUrl: string): Promise<DiscoveredPair[]> {

@@ -30,10 +30,6 @@ const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0xb33eaad8d922b1083446dc23f610c2567fb5180f', // UNI
     '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // CRV
   ]),
-  80002: new Set([
-    '0x9c3c9283d3e44854697cd22d3faa240cfb032889', // WMATIC Amoy
-    '0x41e94eb019c0762f9bfcf9fb1e58725bfb0a7582', // USDC Amoy
-  ]),
   1: new Set([
     '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
     '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
@@ -148,7 +144,6 @@ const BS_BASES: Record<number, string> = {
   137: 'https://polygon.blockscout.com',
   42161: 'https://arbitrum.blockscout.com',
   8453: 'https://base.blockscout.com',
-  80002: 'https://amoy.polygonscan.com',
 };
 
 function pickBsBase(chainId: number): string {
@@ -364,7 +359,7 @@ export async function checkTokenTradeHistory(
 }
 
 const DEXSCREENER_SLUGS: Record<number, string> = {
-  1: 'ethereum', 10: 'optimism', 137: 'polygon', 42161: 'arbitrum', 8453: 'base', 43114: 'avalanche', 56: 'bsc', 250: 'fantom', 80002: 'polygon', 84532: 'base',
+  1: 'ethereum', 10: 'optimism', 137: 'polygon', 42161: 'arbitrum', 8453: 'base', 43114: 'avalanche', 56: 'bsc', 250: 'fantom', 84532: 'base',
 };
 
 export async function dexscreenerGetPools(chainId: number, apiUrl: string): Promise<{ tokenA: string; tokenB: string; label?: string; dexLabel?: string }[]> {
