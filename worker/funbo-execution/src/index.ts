@@ -3,7 +3,7 @@ import { initDB } from './db';
 import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult } from './bot-engine';
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
-import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
+import { encodeV3Path, getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, urlQuotaTier, markNodeHealth, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 
 async function hashApiKey(apiKey: string): Promise<string> {
@@ -271,7 +271,7 @@ app.post('/api/cron/execute', async (c) => {
   return c.json({ success: true, message: 'Execution triggered', triggered: 'external' });
 });
 
-const SCAN_VERSION = 'v3-sequential';
+const SCAN_VERSION = 'v4-rotate-rpc';
 async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserted: number; executed: number }> {
   const DB = env['funbo-db'];
   const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
@@ -284,9 +284,23 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   const tradeAmount = tradeAmountRes?.value || '0.1';
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
   const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
-  const _rpcUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
-  if (!_rpcUrl) { console.log(`[scan:${SCAN_VERSION}] no working RPC`); return { inserted: 0, executed: 0 }; }
-  console.log(`[scan:${SCAN_VERSION}] rpc=${_rpcUrl} routers=${routers.results.length} pairs=${pairs.results.length} minPct=${minProfitPct} feeTier=${feeTier}`);
+  
+  const rpcPool = await getHealthyRpcPool(env, chainId, network.rpc_url);
+  const workingRpcs: string[] = [];
+  for (const url of rpcPool) {
+    const blocked = await getProvider403Blocked(env, url);
+    if (blocked) continue;
+    workingRpcs.push(url);
+  }
+  if (workingRpcs.length === 0) {
+    const fallbackUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
+    if (fallbackUrl) workingRpcs.push(fallbackUrl);
+  }
+  if (workingRpcs.length === 0) { console.log(`[scan:${SCAN_VERSION}] no working RPCs`); return { inserted: 0, executed: 0 }; }
+  
+  let rpcIdx = 0;
+  const nextRpc = () => { const url = workingRpcs[rpcIdx % workingRpcs.length]; rpcIdx++; return url; };
+  console.log(`[scan:${SCAN_VERSION}] rpcPool=${workingRpcs.length} urls=${workingRpcs.map(u => u.replace(/https?:\/\//, '').slice(0, 40)).join(', ')}`);
     const maxPairsPerRun = 20;
     const maxRouterPairsPerPair = 10;
   let inserted = 0;
@@ -304,10 +318,12 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
         for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; j++) {
           pairAttempts += 2;
           pairTotalAttempts++;
-          const quoteA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env);
-          const quoteB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env);
+          const rpcA = nextRpc();
+          const rpcB = nextRpc();
+          const quoteA = await rawQuoteRoute(rpcA, pair.token_a, pair.token_b, validRouters[i], feeTier, env);
+          const quoteB = await rawQuoteRoute(rpcB, pair.token_a, pair.token_b, validRouters[j], feeTier, env);
           if (quoteA && quoteB && quoteA !== 0n && quoteB !== 0n) pairQuoteHits++;
-          if (pIdx < 3) console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} rA=${validRouters[i].name} rB=${validRouters[j].name} qA=${quoteA?.toString() || 'null'} qB=${quoteB?.toString() || 'null'}`);
+          if (pIdx < 3) console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} rA=${validRouters[i].name}(${rpcA.slice(0,25)}) rB=${validRouters[j].name}(${rpcB.slice(0,25)}) qA=${quoteA?.toString() || 'null'} qB=${quoteB?.toString() || 'null'}`);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
