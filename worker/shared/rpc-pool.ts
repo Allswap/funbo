@@ -15,8 +15,10 @@ const DEFAULT_POOLS: Record<number, string[]> = {
     137: [
       'https://polygon-bor-rpc.publicnode.com',
       'https://polygon.drpc.org',
-      'https://rpc.blockscout.com/polygon',
-      'https://polygon-mainnet.core.chainstack.com/8dff6ff47187271e7b9873336e77f749',
+      'https://polygon.gateway.tenderly.co',
+      'https://tenderly.rpc.polygon.community',
+      'https://pol.leorpc.com/?api_key=FREE',
+      'https://rpc.satelink.network/rpc/polygon',
     ],
    42161: [
      'https://arbitrum-rpc.publicnode.com',
@@ -167,6 +169,9 @@ export function classifyProvider(url: string): string | null {
   if (lower.includes('ankr.com')) return 'ankr';
   if (lower.includes('getblock.io')) return 'getblock';
   if (lower.includes('nownodes.io')) return 'nownodes';
+  if (lower.includes('tenderly')) return 'tenderly';
+  if (lower.includes('leorpc.com')) return 'leorpc';
+  if (lower.includes('satelink')) return 'satelink';
   if (lower.includes('ankr')) return 'ankr';
   return null;
 }

@@ -24,6 +24,9 @@ const RPC_PROVIDER_LIMITS: Record<string, { rpm: number; rpd: number }> = {
   getblock:   { rpm: 30,  rpd: 40000 },
   nownodes:   { rpm: 10,  rpd: 10000 },
   '1rpc':     { rpm: 50,  rpd: 50000 },
+  tenderly:   { rpm: 50,  rpd: 50000 },
+  leorpc:     { rpm: 50,  rpd: 50000 },
+  satelink:   { rpm: 50,  rpd: 50000 },
 };
 
 interface ServiceState {
