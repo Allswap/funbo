@@ -81,32 +81,52 @@ app.get('/api/debug/scan-trace', async (c) => {
     const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
     push('validRouters', { count: validRouters.length, names: validRouters.map((r: any) => r.name) });
 
-    const testPair = pairs.results?.[0];
-    if (!testPair) { push('ERROR: no pairs'); return c.json({ trace }); }
-    push('testPair', { id: testPair.id, label: testPair.label, a: testPair.token_a, b: testPair.token_b });
-
-    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 1000;
+    const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
+    const USDCE = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
+    push('testConfig', { WMATIC, USDCE, feeTier });
 
     const testRouter = validRouters.find((r: any) => r.name === 'QuickSwap');
+    const testRouter2 = validRouters.find((r: any) => r.name === 'Uniswap V2');
+
     if (testRouter) {
-      push('testing_quote', { router: testRouter.name, version: testRouter.version, addr: testRouter.address });
+      push('testing_QS_WMATIC_USDCe', { addr: testRouter.address, version: testRouter.version });
       try {
-        const q = await rawQuoteRoute(rpcUrl, testPair.token_a, testPair.token_b, testRouter, feeTier, c.env);
-        push('quote_result', { value: q?.toString(), isNull: q === null, isZero: q === 0n });
+        const q = await rawQuoteRoute(rpcUrl, WMATIC, USDCE, testRouter, feeTier, c.env);
+        push('QS_WMATIC_USDCe', { value: q?.toString(), isNull: q === null, isZero: q === 0n });
       } catch (e: any) {
-        push('quote_error', { error: e.message });
+        push('QS_WMATIC_USDCe_error', { error: e.message });
+      }
+    }
+    if (testRouter2) {
+      push('testing_UV2_WMATIC_USDCe', { addr: testRouter2.address, version: testRouter2.version });
+      try {
+        const q2 = await rawQuoteRoute(rpcUrl, WMATIC, USDCE, testRouter2, feeTier, c.env);
+        push('UV2_WMATIC_USDCe', { value: q2?.toString(), isNull: q2 === null, isZero: q2 === 0n });
+      } catch (e: any) {
+        push('UV2_WMATIC_USDCe_error', { error: e.message });
       }
     }
 
-    const testRouter2 = validRouters.find((r: any) => r.name === 'Uniswap V2');
-    if (testRouter2) {
-      push('testing_quote2', { router: testRouter2.name, version: testRouter2.version, addr: testRouter2.address });
+    const WBTC = '0x1BFD67037B42CF73acF2047067bd4F2C47D9BfD6';
+    if (testRouter) {
       try {
-        const q2 = await rawQuoteRoute(rpcUrl, testPair.token_a, testPair.token_b, testRouter2, feeTier, c.env);
-        push('quote_result2', { value: q2?.toString(), isNull: q2 === null, isZero: q2 === 0n });
+        const q = await rawQuoteRoute(rpcUrl, WMATIC, WBTC, testRouter, feeTier, c.env);
+        push('QS_WMATIC_WBTC', { value: q?.toString(), isNull: q === null });
       } catch (e: any) {
-        push('quote_error2', { error: e.message });
+        push('QS_WMATIC_WBTC_error', { error: e.message });
       }
+    }
+
+    try {
+      const directResult = await rawEthCall(rpcUrl, '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff', V2_GET_AMOUNTS_OUT + '000000000000000000000000000000000000000000000000016345785d8a0000' + '0000000000000000000000000000000000000000000000000000000000000040' + '0000000000000000000000000000000000000000000000000000000000000002' + '0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270' + '0000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174', c.env);
+      push('direct_ethcall', { result: directResult ? directResult.slice(0, 60) + '...' : null, isNull: directResult === null });
+      if (directResult) {
+        const decoded = directResult === '0x' ? [] : (() => { try { const s = directResult.replace('0x',''); const off = parseInt(s.slice(0,64),16)*2; const len = parseInt(s.slice(off,off+64),16); const r: bigint[] = []; for(let i=0;i<len;i++) r.push(BigInt('0x'+s.slice(off+64+i*64,off+64+(i+1)*64))); return r; } catch(e) { return ['decode_error:'+e]; }})();
+        push('direct_decoded', { amounts: (decoded as any[]).map(a => typeof a === 'bigint' ? a.toString() : a) });
+      }
+    } catch (e: any) {
+      push('direct_ethcall_error', { error: e.message });
     }
 
     try {
