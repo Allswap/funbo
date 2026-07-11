@@ -9,3 +9,6 @@ dist-ssr/
 .idea/
 .DS_Store
 *.sw?
+STATUS.md
+AUDIT_REPORT.md
+log.md
