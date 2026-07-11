@@ -348,9 +348,8 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
       .bind(chainId, minProfitPct).all();
     await logScanResult(env, chainId, 'cross-dex', opportunities.results || []);
   }
-  const execResult = await executePendingOpportunities(env);
-  console.log(`[executor] scan-and-execute: chain=${chainId} inserted=${inserted} executed=${execResult.executed}`);
-  return { inserted, executed: execResult.executed };
+  console.log(`[executor] scan-and-execute: chain=${chainId} inserted=${inserted}`);
+  return { inserted, executed: 0 };
 }
 
 app.post('/api/cron/scan-and-execute', async (c) => {
