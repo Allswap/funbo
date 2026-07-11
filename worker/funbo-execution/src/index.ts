@@ -248,10 +248,8 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
       for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; i++) {
         for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; j++) {
           pairAttempts += 2;
-          const [quoteA, quoteB] = await Promise.all([
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env),
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env),
-          ]);
+          const quoteA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env);
+          const quoteB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
