@@ -243,27 +243,15 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
     for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
       const pair = pairs.results[pIdx];
       let routerPairsDone = 0;
-      const maxQuotesPerPair = maxRouterPairsPerPair * 2;
       let pairAttempts = 0;
-      const routerResults: Record<string, bigint|null> = {};
-
-      const pairA = pair.token_a.toLowerCase();
-      const pairB = pair.token_b.toLowerCase();
-      const quickRouter = validRouters.find((r: any) => r.name === 'QuickSwap');
-      const uv2Router = validRouters.find((r: any) => r.name === 'Uniswap V2');
-
-      if (pairAttempts < 5) {
-        for (const rr of validRouters.slice(0, 4)) {
-          const q = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, rr, feeTier, c.env);
-          routerResults[rr.name] = q;
-        }
-      }
-
-      for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxQuotesPerPair; i++) {
-        for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxQuotesPerPair; j++) {
+      const maxAttempts = maxRouterPairsPerPair * 2;
+      for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; i++) {
+        for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; j++) {
           pairAttempts += 2;
-          let quoteA = routerResults[validRouters[i].name] !== undefined ? routerResults[validRouters[i].name] : await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, c.env);
-          let quoteB = routerResults[validRouters[j].name] !== undefined ? routerResults[validRouters[j].name] : await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, c.env);
+          const [quoteA, quoteB] = await Promise.all([
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env),
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env),
+          ]);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
@@ -277,13 +265,6 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           inserted++;
           routerPairsDone++;
         }
-      }
-
-      if (pIdx < 5 || Object.values(routerResults).some(v => v !== null)) {
-        const rrLog: Record<string, string|null> = {};
-        for (const [k, v] of Object.entries(routerResults)) rrLog[k] = v ? v.toString() : null;
-        push('pair_scan', { idx: pIdx, label: pairLabel, routerResults: rrLog, quotesFound, routerPairsDone });
-      }
       }
     }
   }
