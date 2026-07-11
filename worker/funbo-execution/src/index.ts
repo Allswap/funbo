@@ -38,7 +38,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
 
   const path = c.req.path.replace(/\/+/g, '/');
-  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute', '/api/debug/scan-trace'];
+  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute', '/api/debug/scan-trace', '/api/debug/diagnostic-scan'];
   if (publicPaths.includes(path)) return next();
 
   const apiKey = c.req.header('X-API-Key');
@@ -164,6 +164,77 @@ app.get('/api/debug/scan-trace', async (c) => {
   }
 
   return c.json({ trace });
+});
+
+app.get('/api/debug/diagnostic-scan', async (c) => {
+  const DB = c.env['funbo-db'];
+  const chainId = 137;
+  const log: any[] = [];
+  const push = (msg: string, data?: any) => log.push({ t: Date.now(), msg, ...data });
+
+  try {
+    const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
+    const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
+    const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
+    const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.5;
+    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
+    push('config', { minProfitPct, feeTier });
+
+    if (!network?.rpc_url) { push('ERROR: no network'); return c.json({ log }); }
+    const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
+    push('rpcUrl', { url: _rpcUrl?.slice(0, 60) });
+    if (!_rpcUrl) { push('ERROR: no rpcUrl'); return c.json({ log }); }
+
+    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
+    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
+    const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+    push('counts', { routers: validRouters.length, pairs: pairs.results?.length });
+
+    let inserted = 0;
+    const seenPairs = new Set<string>();
+    const maxPairsPerRun = 20;
+    const maxRouterPairsPerPair = 10;
+
+    for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
+      const pair = pairs.results[pIdx];
+      const pairLabel = pair.label || `${pair.token_a?.slice(0,8)}/${pair.token_b?.slice(0,8)}`;
+      let routerPairsDone = 0;
+      let quotesFound = 0;
+
+      for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair; i++) {
+        for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair; j++) {
+          const ri = validRouters[i];
+          const rj = validRouters[j];
+          const [quoteA, quoteB] = await Promise.all([
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, ri, feeTier, c.env),
+            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, rj, feeTier, c.env),
+          ]);
+
+          if (quoteA && quoteB && quoteA > 0n && quoteB > 0n) {
+            quotesFound++;
+            const bestOut = quoteA > quoteB ? quoteA : quoteB;
+            const worstOut = quoteA > quoteB ? quoteB : quoteA;
+            const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
+            if (profitBps >= minProfitPct) {
+              push('OPPORTUNITY', { pair: pairLabel, rA: ri.name, rB: rj.name, qA: quoteA.toString(), qB: quoteB.toString(), profitPct: profitBps });
+              inserted++;
+              routerPairsDone++;
+            }
+          }
+        }
+      }
+
+      if (pIdx < 5 || quotesFound > 0) {
+        push('pair_scan', { idx: pIdx, label: pairLabel, quotesFound, routerPairsDone });
+      }
+    }
+
+    push('RESULT', { inserted, totalPairsScanned: Math.min(pairs.results.length, maxPairsPerRun) });
+  } catch (e: any) {
+    push('ERROR', { message: e.message, stack: e.stack?.slice(0, 300) });
+  }
+
+  return c.json({ log });
 });
 
 app.post('/api/bot/run', async (c) => {
