@@ -11,8 +11,19 @@ type RateLimitService = 'goplus' | 'blockscout' | 'rpc' | 'worker_cpu';
 const SERVICE_CONFIGS: Record<RateLimitService, RateLimitConfig> = {
   goplus:       { limitPerWindow: 20, windowMs: 60_000, backoffMs: 2_000, maxBackoffMs: 30_000, recoveryFactor: 0.9 },
   blockscout:   { limitPerWindow: 120, windowMs: 60_000, backoffMs: 500,   maxBackoffMs: 15_000, recoveryFactor: 0.95 },
-  rpc:          { limitPerWindow: 80, windowMs: 60_000, backoffMs: 500,   maxBackoffMs: 15_000, recoveryFactor: 0.95 },
+  rpc:          { limitPerWindow: 100, windowMs: 60_000, backoffMs: 500,   maxBackoffMs: 15_000, recoveryFactor: 0.95 },
   worker_cpu:   { limitPerWindow: 1,  windowMs: 10_000, backoffMs: 100,   maxBackoffMs: 5_000,  recoveryFactor: 0.8 },
+};
+
+const RPC_PROVIDER_LIMITS: Record<string, { rpm: number; rpd: number }> = {
+  drpc:       { rpm: 50,  rpd: 50000 },
+  publicnode: { rpm: 50,  rpd: 50000 },
+  blockscout: { rpm: 120, rpd: 100000 },
+  chainstack: { rpm: 120, rpd: 100000 },
+  ankr:       { rpm: 70,  rpd: 100000 },
+  getblock:   { rpm: 30,  rpd: 40000 },
+  nownodes:   { rpm: 10,  rpd: 10000 },
+  '1rpc':     { rpm: 50,  rpd: 50000 },
 };
 
 interface ServiceState {

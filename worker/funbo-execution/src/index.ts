@@ -3,8 +3,8 @@ import { initDB } from './db';
 import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult } from './bot-engine';
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
-import { encodeV3Path, getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, urlQuotaTier, markNodeHealth, logError } from '../../shared/rpc-pool';
-import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
+import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT } from '../../shared/quotes';
 
 async function hashApiKey(apiKey: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(apiKey);
@@ -38,7 +38,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
 
   const path = c.req.path.replace(/\/+/g, '/');
-  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute', '/api/debug/scan-trace', '/api/debug/diagnostic-scan'];
+  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute'];
   if (publicPaths.includes(path)) return next();
 
   const apiKey = c.req.header('X-API-Key');
@@ -51,211 +51,6 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/api/health', (c) => c.json({ status: 'ok', worker: 'funbo-execution' }));
-
-app.get('/api/debug/scan-trace', async (c) => {
-  const DB = c.env['funbo-db'];
-  const chainId = 137;
-  const trace: any[] = [];
-  const push = (msg: string, data?: any) => trace.push({ t: Date.now(), msg, ...data });
-
-  try {
-    const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
-    push('network', { rpc_url: network?.rpc_url, exists: !!network });
-
-    const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
-    const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
-    const tradeAmountRow = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as any;
-    push('config', { min_profit_pct: minProfitRow?.value, fee_tier: feeTierRow?.value, trade_amount: tradeAmountRow?.value });
-
-    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
-    push('routers', { total: routers.results?.length, results: routers.results?.map((r: any) => ({ name: r.name, version: r.version, addr: r.address?.slice(0,10), quoter: r.quoter_address?.slice(0,10) })) });
-
-    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
-    push('pairs', { total: pairs.results?.length, first3: pairs.results?.slice(0,3).map((p: any) => ({ id: p.id, label: p.label, a: p.token_a?.slice(0,10), b: p.token_b?.slice(0,10) })) });
-
-    const rpcUrl = await getWorkingRpcUrl(c.env, chainId, network?.rpc_url || '');
-    push('rpcUrl', { url: rpcUrl?.slice(0, 50) });
-
-    if (!rpcUrl) { push('ERROR: no rpcUrl'); return c.json({ trace }); }
-
-    const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-    push('validRouters', { count: validRouters.length, names: validRouters.map((r: any) => r.name) });
-
-    const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
-    const USDCE = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
-    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
-    push('testConfig', { WMATIC, USDCE, feeTier });
-
-    const testRouter = validRouters.find((r: any) => r.name === 'QuickSwap');
-    const testRouter2 = validRouters.find((r: any) => r.name === 'Uniswap V2');
-
-    if (testRouter) {
-      push('testing_QS_WMATIC_USDCe', { addr: testRouter.address, version: testRouter.version });
-      try {
-        const q = await rawQuoteRoute(rpcUrl, WMATIC, USDCE, testRouter, feeTier, c.env);
-        push('QS_WMATIC_USDCe', { value: q?.toString(), isNull: q === null, isZero: q === 0n });
-      } catch (e: any) {
-        push('QS_WMATIC_USDCe_error', { error: e.message });
-      }
-    }
-    if (testRouter2) {
-      push('testing_UV2_WMATIC_USDCe', { addr: testRouter2.address, version: testRouter2.version });
-      try {
-        const q2 = await rawQuoteRoute(rpcUrl, WMATIC, USDCE, testRouter2, feeTier, c.env);
-        push('UV2_WMATIC_USDCe', { value: q2?.toString(), isNull: q2 === null, isZero: q2 === 0n });
-      } catch (e: any) {
-        push('UV2_WMATIC_USDCe_error', { error: e.message });
-      }
-    }
-
-    const WBTC = '0x1BFD67037B42CF73acF2047067bd4F2C47D9BfD6';
-    if (testRouter) {
-      try {
-        const q = await rawQuoteRoute(rpcUrl, WMATIC, WBTC, testRouter, feeTier, c.env);
-        push('QS_WMATIC_WBTC', { value: q?.toString(), isNull: q === null });
-      } catch (e: any) {
-        push('QS_WMATIC_WBTC_error', { error: e.message });
-      }
-    }
-
-    try {
-      const directResult = await rawEthCall(rpcUrl, '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff', V2_GET_AMOUNTS_OUT + '000000000000000000000000000000000000000000000000016345785d8a0000' + '0000000000000000000000000000000000000000000000000000000000000040' + '0000000000000000000000000000000000000000000000000000000000000002' + '0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270' + '0000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174', c.env);
-      push('direct_ethcall', { result: directResult ? directResult.slice(0, 60) + '...' : null, isNull: directResult === null });
-      if (directResult) {
-        const decoded = directResult === '0x' ? [] : (() => { try { const s = directResult.replace('0x',''); const off = parseInt(s.slice(0,64),16)*2; const len = parseInt(s.slice(off,off+64),16); const r: bigint[] = []; for(let i=0;i<len;i++) r.push(BigInt('0x'+s.slice(off+64+i*64,off+64+(i+1)*64))); return r; } catch(e) { return ['decode_error:'+e]; }})();
-        push('direct_decoded', { amounts: (decoded as any[]).map(a => typeof a === 'bigint' ? a.toString() : a) });
-      }
-    } catch (e: any) {
-      push('direct_ethcall_error', { error: e.message });
-    }
-
-    try {
-      const quickSwapAddr = testRouter?.address || '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff';
-      const wmaticUsdce = '0xd06ca61f0000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174';
-      const testRpcs = [
-        { name: 'drpc', url: 'https://polygon.drpc.org' },
-        { name: 'publicnode', url: 'https://polygon-bor-rpc.publicnode.com' },
-        { name: 'chainstack', url: 'https://polygon-mainnet.core.chainstack.com/8dff6ff47187271e7b9873336e77f749' },
-        { name: 'ankr', url: 'https://rpc.ankr.com/polygon' },
-      ];
-      for (const rpc of testRpcs) {
-        try {
-          const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_call', params: [{ to: quickSwapAddr, data: wmaticUsdce }, 'latest'], id: 1 });
-          const res = await fetch(rpc.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
-          const json = await res.json() as any;
-          const hasResult = !!json.result && json.result !== '0x';
-          let amountOut = null;
-          if (hasResult) {
-            const hex = json.result.replace('0x', '');
-            const arrOff = parseInt(hex.slice(0, 64), 16) * 2;
-            amountOut = Number(BigInt('0x' + hex.slice(arrOff + 64, arrOff + 128)));
-          }
-          push('rpc_test', { name: rpc.name, status: res.status, ok: res.ok, hasResult, amountOut, error: json.error?.message || null });
-        } catch (e: any) {
-          push('rpc_test', { name: rpc.name, error: e.message });
-        }
-      }
-    } catch (e: any) {
-      push('rawEthCall_error', { error: e.message, stack: e.stack?.slice(0, 200) });
-    }
-
-  } catch (e: any) {
-    push('top_level_error', { error: e.message, stack: e.stack?.slice(0, 200) });
-  }
-
-  return c.json({ trace });
-});
-
-app.get('/api/debug/diagnostic-scan', async (c) => {
-  const DB = c.env['funbo-db'];
-  const chainId = 137;
-  const log: any[] = [];
-  const push = (msg: string, data?: any) => log.push({ t: Date.now(), msg, ...data });
-
-  try {
-    const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
-    const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
-    const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
-    push('config', { feeTier });
-
-    if (!network?.rpc_url) { push('ERROR: no network'); return c.json({ log }); }
-    const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
-    push('rpcUrl', { url: _rpcUrl });
-    if (!_rpcUrl) { push('ERROR: no rpcUrl'); return c.json({ log }); }
-
-    const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
-    const USDCE = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
-    const WBTC = '0x1BFD67037B42CF73acF2047067bd4F2C47D9BfD6';
-
-    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
-    const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-
-    push('routers', { count: validRouters.length, names: validRouters.map((r: any) => `${r.name}(${r.version})`) });
-
-    for (const rr of validRouters.slice(0, 6)) {
-      for (const [label, tokenA, tokenB] of [['WMATIC/USDC.e', WMATIC, USDCE], ['WMATIC/WBTC', WMATIC, WBTC]]) {
-        const start = Date.now();
-        const q = await rawQuoteRoute(_rpcUrl, tokenA, tokenB, rr, feeTier, c.env);
-        const ms = Date.now() - start;
-        push('quote', { router: rr.name, version: rr.version, pair: label, value: q?.toString() || null, ms });
-      }
-    }
-  } catch (e: any) {
-    push('ERROR', { message: e.message, stack: e.stack?.slice(0, 300) });
-  }
-
-  return c.json({ log });
-});
-
-app.get('/api/debug/scan-sim', async (c) => {
-  const DB = c.env['funbo-db'];
-  const chainId = 137;
-  const log: any[] = [];
-  const push = (msg: string, data?: any) => log.push({ t: Date.now(), msg, ...data });
-
-  const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
-  const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
-  const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
-  const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
-  const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.01;
-  const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
-
-  push('config', { feeTier, minProfitPct, rpcUrl: _rpcUrl });
-
-  const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
-  const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-  const v2Routers = validRouters.filter((r: any) => r.version === 'v2');
-  push('v2_routers', { count: v2Routers.length, names: v2Routers.map((r: any) => r.name) });
-
-  const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1 ORDER BY id LIMIT 5').bind(chainId).all() as any;
-
-  for (const pair of pairs.results) {
-    push('pair', { label: pair.label, token_a: pair.token_a.slice(0,10), token_b: pair.token_b.slice(0,10) });
-    for (let i = 0; i < v2Routers.length; i++) {
-      for (let j = i + 1; j < v2Routers.length; j++) {
-        const start = Date.now();
-        const qA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, v2Routers[i], feeTier, c.env);
-        const msA = Date.now() - start;
-        const start2 = Date.now();
-        const qB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, v2Routers[j], feeTier, c.env);
-        const msB = Date.now() - start2;
-        const bothValid = qA && qB && qA !== 0n && qB !== 0n;
-        let profitBps = 0;
-        if (bothValid) {
-          const best = qA > qB ? qA : qB;
-          const worst = qA > qB ? qB : qA;
-          profitBps = Number((best - worst) * 10000n / worst) / 100;
-        }
-        push('v2_pair', {
-          rA: v2Routers[i].name, rB: v2Routers[j].name,
-          qA: qA?.toString() || null, qB: qB?.toString() || null,
-          msA, msB, profitBps, above: profitBps >= minProfitPct
-        });
-      }
-    }
-  }
-  return c.json({ log });
-});
 
 app.post('/api/bot/run', async (c) => {
   const result = await executePendingOpportunities(c.env);

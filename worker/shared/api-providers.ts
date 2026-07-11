@@ -3,6 +3,7 @@ import { callWithRateLimit, isRateLimitError } from './rate-limiter';
 const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
   137: new Set([
     '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', // WMATIC/WPOL
+    '0x0000000000000000000000000000000000001010', // MATIC (native)
     '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', // USDC (Native)
     '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', // USDC.e (Bridged)
     '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT
@@ -15,7 +16,14 @@ const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39', // LINK
     '0xd6df932a45c0f255f85145f286ea0b292b21c90b', // AAVE
     '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // CRV
-    '0x0000000000000000000000000000000000001010', // MATIC (native)
+    '0x3ba4c387f786bfee076a58914f5bd38d668b42c3', // BNB
+    '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', // SOL (Wormhole)
+    '0x06d02e9d62a13fc76bb229373fb3bbbd1101d2fc', // LEO
+    '0xb5c064f965edd4c86b888cc2e0e4dcbd6ee4e70f', // QUICK
+    '0xbbba073c3fbeca5f684c7664b40767582edcb7c6', // SAND
+    '0x0ffd9608223830edec42d8498c23fc48368dc4dc', // SCR
+    '0xb0897686c545042afc77c20201758a0b201b33a3', // LINK (PoS extra)
+    '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
   ]),
   80002: new Set([
     '0x9c3c9283d3e44854697cd22d3faa240cfb032889', // WMATIC Amoy
