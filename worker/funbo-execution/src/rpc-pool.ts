@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import {
   getHealthyRpcPool, markNodeHealth,
   setProvider403Blocked, getProvider403Blocked,
-  urlQuotaTier, classifyProvider,
+  urlQuotaTier, classifyProvider, getWorkingRpcUrl,
 } from '../../shared/rpc-pool';
 import { getRateLimitStatus, recordRateLimit, recordSuccess } from '../../shared/rate-limiter';
 
@@ -98,6 +98,11 @@ export async function getWorkingProvider(
   if (probe.ok) {
     await markNodeHealth(env, rpcUrl, classifyProvider(rpcUrl), chainId ?? null, probe.latencyMs, true);
     return { provider: makeProvider(rpcUrl, chainId), url: rpcUrl };
+  }
+
+  const fallbackUrl = await getWorkingRpcUrl(env, chainId ?? 137, rpcUrl);
+  if (fallbackUrl) {
+    return { provider: makeProvider(fallbackUrl, chainId), url: fallbackUrl };
   }
 
   throw new Error(`All RPC endpoints unreachable for chain ${chainId ?? 'unknown'}`);
