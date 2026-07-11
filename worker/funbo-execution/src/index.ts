@@ -221,10 +221,11 @@ app.post('/api/cron/execute', async (c) => {
   return c.json({ success: true, message: 'Execution triggered', triggered: 'external' });
 });
 
+const SCAN_VERSION = 'v3-sequential';
 async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserted: number; executed: number }> {
   const DB = env['funbo-db'];
   const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
-  if (!network?.rpc_url) return { inserted: 0, executed: 0 };
+  if (!network?.rpc_url) { console.log(`[scan:${SCAN_VERSION}] no network`); return { inserted: 0, executed: 0 }; }
   const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as { value: string } | null;
   const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.5;
   const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as { value: string } | null;
@@ -234,22 +235,29 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
   const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
   const _rpcUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
-  if (!_rpcUrl) return { inserted: 0, executed: 0 };
+  if (!_rpcUrl) { console.log(`[scan:${SCAN_VERSION}] no working RPC`); return { inserted: 0, executed: 0 }; }
+  console.log(`[scan:${SCAN_VERSION}] rpc=${_rpcUrl} routers=${routers.results.length} pairs=${pairs.results.length} minPct=${minProfitPct} feeTier=${feeTier}`);
     const maxPairsPerRun = 20;
     const maxRouterPairsPerPair = 10;
   let inserted = 0;
   if (routers.results.length >= 2 && pairs.results.length > 0) {
     const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+    console.log(`[scan:${SCAN_VERSION}] validRouters=${validRouters.map((r: any) => `${r.name}(${r.version})`).join(', ')}`);
     for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
       const pair = pairs.results[pIdx];
       let routerPairsDone = 0;
       let pairAttempts = 0;
       const maxAttempts = maxRouterPairsPerPair * 2;
+      let pairQuoteHits = 0;
+      let pairTotalAttempts = 0;
       for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; i++) {
         for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxAttempts; j++) {
           pairAttempts += 2;
+          pairTotalAttempts++;
           const quoteA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env);
           const quoteB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env);
+          if (quoteA && quoteB && quoteA !== 0n && quoteB !== 0n) pairQuoteHits++;
+          if (pIdx < 3) console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} rA=${validRouters[i].name} rB=${validRouters[j].name} qA=${quoteA?.toString() || 'null'} qB=${quoteB?.toString() || 'null'}`);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
@@ -264,6 +272,7 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           routerPairsDone++;
         }
       }
+      console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} done: attempts=${pairTotalAttempts} quoteHits=${pairQuoteHits} inserted=${inserted}`);
     }
   }
   await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
