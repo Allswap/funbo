@@ -271,7 +271,7 @@ app.post('/api/cron/execute', async (c) => {
   return c.json({ success: true, message: 'Execution triggered', triggered: 'external' });
 });
 
-const SCAN_VERSION = 'v4-rotate-rpc';
+const SCAN_VERSION = 'v5-verify-rpcs';
 async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserted: number; executed: number }> {
   const DB = env['funbo-db'];
   const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
@@ -286,11 +286,22 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
   
   const rpcPool = await getHealthyRpcPool(env, chainId, network.rpc_url);
+  const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
+  const USDC_E = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+  const QUICKSWAP = '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff';
+  const probeData = V2_GET_AMOUNTS_OUT + '0000000000000000000000000000000000000000000000056bc75e2d631000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174';
+  
   const workingRpcs: string[] = [];
   for (const url of rpcPool) {
     const blocked = await getProvider403Blocked(env, url);
-    if (blocked) continue;
-    workingRpcs.push(url);
+    if (blocked) { console.log(`[scan:${SCAN_VERSION}] skip blocked: ${url.slice(0, 40)}`); continue; }
+    const result = await rawEthCall(url, QUICKSWAP, probeData);
+    if (result && result !== '0x') {
+      workingRpcs.push(url);
+      console.log(`[scan:${SCAN_VERSION}] verified: ${url.replace(/https?:\/\//, '').slice(0, 40)}`);
+    } else {
+      console.log(`[scan:${SCAN_VERSION}] failed probe: ${url.replace(/https?:\/\//, '').slice(0, 40)}`);
+    }
   }
   if (workingRpcs.length === 0) {
     const fallbackUrl = await getWorkingRpcUrl(env, chainId, network.rpc_url);
@@ -300,7 +311,7 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   
   let rpcIdx = 0;
   const nextRpc = () => { const url = workingRpcs[rpcIdx % workingRpcs.length]; rpcIdx++; return url; };
-  console.log(`[scan:${SCAN_VERSION}] rpcPool=${workingRpcs.length} urls=${workingRpcs.map(u => u.replace(/https?:\/\//, '').slice(0, 40)).join(', ')}`);
+  console.log(`[scan:${SCAN_VERSION}] pool=${workingRpcs.length} routers=${routers.results.length} pairs=${pairs.results.length} minPct=${minProfitPct} feeTier=${feeTier}`);
     const maxPairsPerRun = 20;
     const maxRouterPairsPerPair = 10;
   let inserted = 0;
