@@ -207,6 +207,62 @@ app.get('/api/debug/diagnostic-scan', async (c) => {
   return c.json({ log });
 });
 
+app.get('/api/debug/scan-sim', async (c) => {
+  const DB = c.env['funbo-db'];
+  const chainId = 137;
+  const log: any[] = [];
+  const push = (msg: string, data?: any) => log.push({ t: Date.now(), msg, ...data });
+
+  const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
+  const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
+  const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
+  const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
+  const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.01;
+  const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
+
+  push('config', { feeTier, minProfitPct, rpcUrl: _rpcUrl });
+
+  const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
+  const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
+  push('routers', { count: validRouters.length, names: validRouters.map((r: any) => `${r.name}(${r.version})`) });
+
+  const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1 ORDER BY id').bind(chainId).all() as any;
+  push('pairs', { count: pairs.results.length, labels: pairs.results.map((p: any) => `${p.label}: ${p.token_a.slice(0,8)}.../${p.token_b.slice(0,8)}...`) });
+
+  for (let pIdx = 0; pIdx < Math.min(pairs.results.length, 3); pIdx++) {
+    const pair = pairs.results[pIdx];
+    push('pair_start', { label: pair.label, token_a: pair.token_a, token_b: pair.token_b });
+    let routerPairsDone = 0;
+    let pairAttempts = 0;
+    const maxAttempts = 20;
+    for (let i = 0; i < validRouters.length && routerPairsDone < 3 && pairAttempts < maxAttempts; i++) {
+      for (let j = i + 1; j < validRouters.length && routerPairsDone < 3 && pairAttempts < maxAttempts; j++) {
+        pairAttempts += 2;
+        const start = Date.now();
+        const quoteA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, c.env);
+        const msA = Date.now() - start;
+        const start2 = Date.now();
+        const quoteB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, c.env);
+        const msB = Date.now() - start2;
+        push('sim_quote', {
+          rA: validRouters[i].name, rB: validRouters[j].name,
+          qA: quoteA?.toString() || null, qB: quoteB?.toString() || null,
+          msA, msB
+        });
+        if (quoteA && quoteB && quoteA !== 0n && quoteB !== 0n) {
+          const bestOut = quoteA > quoteB ? quoteA : quoteB;
+          const worstOut = quoteA > quoteB ? quoteB : quoteA;
+          const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
+          push('sim_opportunity', { profitBps, minProfitPct, aboveThreshold: profitBps >= minProfitPct });
+          if (profitBps >= minProfitPct) routerPairsDone++;
+        }
+      }
+    }
+    push('pair_end', { label: pair.label, attempts: pairAttempts, opps: routerPairsDone });
+  }
+  return c.json({ log });
+});
+
 app.post('/api/bot/run', async (c) => {
   const result = await executePendingOpportunities(c.env);
   return c.json(result);
