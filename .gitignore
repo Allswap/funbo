@@ -12,3 +12,5 @@ dist-ssr/
 STATUS.md
 AUDIT_REPORT.md
 log.md
+src/
+dist/
