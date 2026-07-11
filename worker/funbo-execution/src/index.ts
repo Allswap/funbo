@@ -38,7 +38,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
 
   const path = c.req.path.replace(/\/+/g, '/');
-  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute'];
+  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute', '/api/debug/scan-trace'];
   if (publicPaths.includes(path)) return next();
 
   const apiKey = c.req.header('X-API-Key');
@@ -110,10 +110,22 @@ app.get('/api/debug/scan-trace', async (c) => {
     }
 
     try {
-      const rawResult = await rawEthCall(rpcUrl, testRouter?.address || '', '0xd06ca61f0000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174', c.env);
-      push('rawEthCall_result', { result: rawResult?.slice(0, 40), isNull: rawResult === null });
+      const quickSwapAddr = testRouter?.address || '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff';
+      const wmaticUsdce = '0xd06ca61f0000000000000000000000000000000000000000000000000de0b6b3a76400000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174';
+      push('rawEthCall_direct', { rpcUrl: rpcUrl?.slice(0, 40), to: quickSwapAddr });
+      const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_call', params: [{ to: quickSwapAddr, data: wmaticUsdce }, 'latest'], id: 1 });
+      const res = await fetch(rpcUrl!, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
+      const json = await res.json() as any;
+      push('rawEthCall_response', { status: res.status, ok: res.ok, resultType: typeof json.result, resultPreview: json.result ? json.result.slice(0, 60) : null, error: json.error, rawJson: JSON.stringify(json).slice(0, 200) });
+      if (json.result && json.result !== '0x') {
+        const hex = json.result.replace('0x', '');
+        const arrOff = parseInt(hex.slice(0, 64), 16) * 2;
+        const amounts: bigint[] = [];
+        for (let i = 0; i < 2; i++) amounts.push(BigInt('0x' + hex.slice(arrOff + 64 + i * 64, arrOff + 64 + (i + 1) * 64)));
+        push('decoded_amounts', { amounts: amounts.map(a => a.toString()) });
+      }
     } catch (e: any) {
-      push('rawEthCall_error', { error: e.message });
+      push('rawEthCall_error', { error: e.message, stack: e.stack?.slice(0, 200) });
     }
 
   } catch (e: any) {
