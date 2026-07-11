@@ -224,41 +224,35 @@ app.get('/api/debug/scan-sim', async (c) => {
 
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
   const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-  push('routers', { count: validRouters.length, names: validRouters.map((r: any) => `${r.name}(${r.version})`) });
+  const v2Routers = validRouters.filter((r: any) => r.version === 'v2');
+  push('v2_routers', { count: v2Routers.length, names: v2Routers.map((r: any) => r.name) });
 
-  const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1 ORDER BY id').bind(chainId).all() as any;
-  push('pairs', { count: pairs.results.length, labels: pairs.results.map((p: any) => `${p.label}: ${p.token_a.slice(0,8)}.../${p.token_b.slice(0,8)}...`) });
+  const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1 ORDER BY id LIMIT 5').bind(chainId).all() as any;
 
-  for (let pIdx = 0; pIdx < Math.min(pairs.results.length, 3); pIdx++) {
-    const pair = pairs.results[pIdx];
-    push('pair_start', { label: pair.label, token_a: pair.token_a, token_b: pair.token_b });
-    let routerPairsDone = 0;
-    let pairAttempts = 0;
-    const maxAttempts = 20;
-    for (let i = 0; i < validRouters.length && routerPairsDone < 3 && pairAttempts < maxAttempts; i++) {
-      for (let j = i + 1; j < validRouters.length && routerPairsDone < 3 && pairAttempts < maxAttempts; j++) {
-        pairAttempts += 2;
+  for (const pair of pairs.results) {
+    push('pair', { label: pair.label, token_a: pair.token_a.slice(0,10), token_b: pair.token_b.slice(0,10) });
+    for (let i = 0; i < v2Routers.length; i++) {
+      for (let j = i + 1; j < v2Routers.length; j++) {
         const start = Date.now();
-        const quoteA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, c.env);
+        const qA = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, v2Routers[i], feeTier, c.env);
         const msA = Date.now() - start;
         const start2 = Date.now();
-        const quoteB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, c.env);
+        const qB = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, v2Routers[j], feeTier, c.env);
         const msB = Date.now() - start2;
-        push('sim_quote', {
-          rA: validRouters[i].name, rB: validRouters[j].name,
-          qA: quoteA?.toString() || null, qB: quoteB?.toString() || null,
-          msA, msB
-        });
-        if (quoteA && quoteB && quoteA !== 0n && quoteB !== 0n) {
-          const bestOut = quoteA > quoteB ? quoteA : quoteB;
-          const worstOut = quoteA > quoteB ? quoteB : quoteA;
-          const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
-          push('sim_opportunity', { profitBps, minProfitPct, aboveThreshold: profitBps >= minProfitPct });
-          if (profitBps >= minProfitPct) routerPairsDone++;
+        const bothValid = qA && qB && qA !== 0n && qB !== 0n;
+        let profitBps = 0;
+        if (bothValid) {
+          const best = qA > qB ? qA : qB;
+          const worst = qA > qB ? qB : qA;
+          profitBps = Number((best - worst) * 10000n / worst) / 100;
         }
+        push('v2_pair', {
+          rA: v2Routers[i].name, rB: v2Routers[j].name,
+          qA: qA?.toString() || null, qB: qB?.toString() || null,
+          msA, msB, profitBps, above: profitBps >= minProfitPct
+        });
       }
     }
-    push('pair_end', { label: pair.label, attempts: pairAttempts, opps: routerPairsDone });
   }
   return c.json({ log });
 });
