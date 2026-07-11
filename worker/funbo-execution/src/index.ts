@@ -174,62 +174,32 @@ app.get('/api/debug/diagnostic-scan', async (c) => {
 
   try {
     const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as any;
-    const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as any;
     const feeTierRow = await DB.prepare('SELECT value FROM config WHERE key = "default_fee_tier"').first() as any;
-    const minProfitPct = minProfitRow ? parseFloat(minProfitRow.value) : 0.5;
     const feeTier = feeTierRow ? parseInt(feeTierRow.value) : 3000;
-    push('config', { minProfitPct, feeTier });
+    push('config', { feeTier });
 
     if (!network?.rpc_url) { push('ERROR: no network'); return c.json({ log }); }
     const _rpcUrl = await getWorkingRpcUrl(c.env, chainId, network.rpc_url);
-    push('rpcUrl', { url: _rpcUrl?.slice(0, 60) });
+    push('rpcUrl', { url: _rpcUrl });
     if (!_rpcUrl) { push('ERROR: no rpcUrl'); return c.json({ log }); }
 
+    const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
+    const USDCE = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+    const WBTC = '0x1BFD67037B42CF73acF2047067bd4F2C47D9BfD6';
+
     const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
-    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as any;
     const validRouters = (routers.results || []).filter((r: any) => r.address && (r.version === 'v3' ? r.quoter_address : true));
-    push('counts', { routers: validRouters.length, pairs: pairs.results?.length });
 
-    let inserted = 0;
-    const seenPairs = new Set<string>();
-    const maxPairsPerRun = 20;
-    const maxRouterPairsPerPair = 10;
+    push('routers', { count: validRouters.length, names: validRouters.map((r: any) => `${r.name}(${r.version})`) });
 
-    for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
-      const pair = pairs.results[pIdx];
-      const pairLabel = pair.label || `${pair.token_a?.slice(0,8)}/${pair.token_b?.slice(0,8)}`;
-      let routerPairsDone = 0;
-      let quotesFound = 0;
-
-      for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair; i++) {
-        for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair; j++) {
-          const ri = validRouters[i];
-          const rj = validRouters[j];
-          const [quoteA, quoteB] = await Promise.all([
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, ri, feeTier, c.env),
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, rj, feeTier, c.env),
-          ]);
-
-          if (quoteA && quoteB && quoteA > 0n && quoteB > 0n) {
-            quotesFound++;
-            const bestOut = quoteA > quoteB ? quoteA : quoteB;
-            const worstOut = quoteA > quoteB ? quoteB : quoteA;
-            const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
-            if (profitBps >= minProfitPct) {
-              push('OPPORTUNITY', { pair: pairLabel, rA: ri.name, rB: rj.name, qA: quoteA.toString(), qB: quoteB.toString(), profitPct: profitBps });
-              inserted++;
-              routerPairsDone++;
-            }
-          }
-        }
-      }
-
-      if (pIdx < 5 || quotesFound > 0) {
-        push('pair_scan', { idx: pIdx, label: pairLabel, quotesFound, routerPairsDone });
+    for (const rr of validRouters.slice(0, 6)) {
+      for (const [label, tokenA, tokenB] of [['WMATIC/USDC.e', WMATIC, USDCE], ['WMATIC/WBTC', WMATIC, WBTC]]) {
+        const start = Date.now();
+        const q = await rawQuoteRoute(_rpcUrl, tokenA, tokenB, rr, feeTier, c.env);
+        const ms = Date.now() - start;
+        push('quote', { router: rr.name, version: rr.version, pair: label, value: q?.toString() || null, ms });
       }
     }
-
-    push('RESULT', { inserted, totalPairsScanned: Math.min(pairs.results.length, maxPairsPerRun) });
   } catch (e: any) {
     push('ERROR', { message: e.message, stack: e.stack?.slice(0, 300) });
   }
@@ -275,13 +245,25 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
       let routerPairsDone = 0;
       const maxQuotesPerPair = maxRouterPairsPerPair * 2;
       let pairAttempts = 0;
+      const routerResults: Record<string, bigint|null> = {};
+
+      const pairA = pair.token_a.toLowerCase();
+      const pairB = pair.token_b.toLowerCase();
+      const quickRouter = validRouters.find((r: any) => r.name === 'QuickSwap');
+      const uv2Router = validRouters.find((r: any) => r.name === 'Uniswap V2');
+
+      if (pairAttempts < 5) {
+        for (const rr of validRouters.slice(0, 4)) {
+          const q = await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, rr, feeTier, c.env);
+          routerResults[rr.name] = q;
+        }
+      }
+
       for (let i = 0; i < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxQuotesPerPair; i++) {
         for (let j = i + 1; j < validRouters.length && routerPairsDone < maxRouterPairsPerPair && pairAttempts < maxQuotesPerPair; j++) {
           pairAttempts += 2;
-          const [quoteA, quoteB] = await Promise.all([
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, env),
-            rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, env),
-          ]);
+          let quoteA = routerResults[validRouters[i].name] !== undefined ? routerResults[validRouters[i].name] : await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[i], feeTier, c.env);
+          let quoteB = routerResults[validRouters[j].name] !== undefined ? routerResults[validRouters[j].name] : await rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, validRouters[j], feeTier, c.env);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
@@ -295,6 +277,13 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           inserted++;
           routerPairsDone++;
         }
+      }
+
+      if (pIdx < 5 || Object.values(routerResults).some(v => v !== null)) {
+        const rrLog: Record<string, string|null> = {};
+        for (const [k, v] of Object.entries(routerResults)) rrLog[k] = v ? v.toString() : null;
+        push('pair_scan', { idx: pIdx, label: pairLabel, routerResults: rrLog, quotesFound, routerPairsDone });
+      }
       }
     }
   }
