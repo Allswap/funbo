@@ -706,9 +706,21 @@ async function ensureAllowance(
     const currentAllowance = await tokenContract.allowance(owner, spender);
     if ((currentAllowance as bigint) >= amount) return true;
 
-    await tokenContract.approve(spender, ethers.MaxUint256);
+    console.log(`[allowance] approving ${spender.slice(0,10)} for ${await tokenContract.symbol?.().catch(() => 'token')} amount=${amount.toString()}`);
+    const tx = await tokenContract.approve(spender, ethers.MaxUint256, {
+      gasLimit: 100000,
+      maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
+      maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+    });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status === 0) {
+      console.error(`[allowance] approve tx failed: ${tx.hash}`);
+      return false;
+    }
+    console.log(`[allowance] approved: ${tx.hash}`);
     return true;
-  } catch {
+  } catch (err: any) {
+    console.error(`[allowance] error: ${err.message}`);
     return false;
   }
 }
@@ -1103,7 +1115,8 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          await appTx.wait();
+          const appReceipt = await appTx.wait();
+          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
           gasLimit: 500000,
@@ -1341,7 +1354,8 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          await appTx.wait();
+          const appReceipt = await appTx.wait();
+          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const quote = await quoteAmountOut(provider, from, to, amountInWei, router, feeTier);
         const minOut = quote && quote.amountOut > 0n
@@ -1652,7 +1666,8 @@ export async function runBotStrategy(
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          await appTx.wait();
+          const appReceipt = await appTx.wait();
+          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
           gasLimit: 500000,

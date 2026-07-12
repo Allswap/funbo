@@ -125,17 +125,18 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           pairAttempts += 2;
           pairTotalAttempts++;
           const rpcA = nextRpc();
-          const rpcB = nextRpc();
+          const rpcB = rpcA;
           const quoteA = await rawQuoteRoute(rpcA, pair.token_a, pair.token_b, validRouters[i], feeTier, env);
           const quoteB = await rawQuoteRoute(rpcB, pair.token_a, pair.token_b, validRouters[j], feeTier, env);
           if (quoteA && quoteB && quoteA !== 0n && quoteB !== 0n) pairQuoteHits++;
-          if (pIdx < 3) console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} rA=${validRouters[i].name}(${rpcA.slice(0,25)}) rB=${validRouters[j].name}(${rpcB.slice(0,25)}) qA=${quoteA?.toString() || 'null'} qB=${quoteB?.toString() || 'null'}`);
+          if (pIdx < 3) console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} rA=${validRouters[i].name} rB=${validRouters[j].name} qA=${quoteA?.toString() || 'null'} qB=${quoteB?.toString() || 'null'}`);
           if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
           const bestOut = quoteA > quoteB ? quoteA : quoteB;
           const worstOut = quoteA > quoteB ? quoteB : quoteA;
           if (worstOut === 0n) continue;
           const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
           if (profitBps < minProfitPct) continue;
+          if (profitBps > 10) { console.log(`[scan:${SCAN_VERSION}] SKIP phantom spread ${pair.label} ${profitBps}%`); continue; }
           const buyRouter = quoteA > quoteB ? validRouters[i] : validRouters[j];
           const sellRouter = quoteA > quoteB ? validRouters[j] : validRouters[i];
           await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
@@ -177,13 +178,12 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           let bestProfit = 0;
           let bestRouter = v2Routers[0];
           for (const router of v2Routers) {
-            const qAB = await rawQuoteRoute(workingRpcs[rpcIdx % workingRpcs.length], tA, tB, router, feeTier, env);
+            const rpcBase = workingRpcs[rpcIdx % workingRpcs.length];
+            const qAB = await rawQuoteRoute(rpcBase, tA, tB, router, feeTier, env);
             if (!qAB || qAB === 0n) continue;
-            const rpcBC = workingRpcs[rpcIdx % workingRpcs.length];
-            const qBC = await rawQuoteRoute(rpcBC, tB, tC, router, feeTier, env);
+            const qBC = await rawQuoteRoute(rpcBase, tB, tC, router, feeTier, env);
             if (!qBC || qBC === 0n) continue;
-            const rpcCA = workingRpcs[rpcIdx % workingRpcs.length];
-            const qCA = await rawQuoteRoute(rpcCA, tC, tA, router, feeTier, env);
+            const qCA = await rawQuoteRoute(rpcBase, tC, tA, router, feeTier, env);
             if (!qCA || qCA === 0n) continue;
             const profitPct = Number((qCA - DEFAULT_AMOUNT_IN) * 10000n / DEFAULT_AMOUNT_IN) / 100;
             if (profitPct > bestProfit) {
