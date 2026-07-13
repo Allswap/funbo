@@ -57,6 +57,15 @@ app.post('/api/bot/run', async (c) => {
   return c.json(result);
 });
 
+app.post('/api/debug/execute', async (c) => {
+  try {
+    const result = await executePendingOpportunities(c.env);
+    return c.json({ ...result, debug: true });
+  } catch (err: any) {
+    return c.json({ error: err.message, stack: err.stack, debug: true }, 500);
+  }
+});
+
 app.post('/api/cron/execute', async (c) => {
   if (!(await dedupCronRun(c.env['funbo-db'], 'execute', 15))) return c.json({ success: true, message: 'Skipped: already ran recently', triggered: 'external' });
   c.executionCtx.waitUntil((async () => {
