@@ -149,6 +149,23 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
             .bind(chainId, buyRouter.address, sellRouter.address, pair.token_a, pair.token_b, tradeAmount, profitBps).run();
           inserted++;
           routerPairsDone++;
+
+          const revQuoteA = await rawQuoteRoute(rpcA, pair.token_b, pair.token_a, validRouters[i], feeTier, env);
+          const revQuoteB = await rawQuoteRoute(rpcB, pair.token_b, pair.token_a, validRouters[j], feeTier, env);
+          if (revQuoteA && revQuoteB && revQuoteA !== 0n && revQuoteB !== 0n) {
+            const revBest = revQuoteA > revQuoteB ? revQuoteA : revQuoteB;
+            const revWorst = revQuoteA > revQuoteB ? revQuoteB : revQuoteA;
+            if (revWorst !== 0n) {
+              const revProfitBps = Number((revBest - revWorst) * 10000n / revWorst) / 100;
+              if (revProfitBps >= minProfitPct && revProfitBps <= 10) {
+                const revBuyRouter = revQuoteA > revQuoteB ? validRouters[i] : validRouters[j];
+                const revSellRouter = revQuoteA > revQuoteB ? validRouters[j] : validRouters[i];
+                await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
+                  .bind(chainId, revBuyRouter.address, revSellRouter.address, pair.token_b, pair.token_a, tradeAmount, revProfitBps).run();
+                inserted++;
+              }
+            }
+          }
         }
       }
       console.log(`[scan:${SCAN_VERSION}] pair=${pair.label} done: attempts=${pairTotalAttempts} quoteHits=${pairQuoteHits} inserted=${inserted}`);
