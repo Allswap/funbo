@@ -113,6 +113,12 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   if (routers.results.length >= 2 && pairs.results.length > 0) {
     const validRouters = routers.results.filter((r: any) => r.address && r.version === 'v2');
     console.log(`[scan:${SCAN_VERSION}] validRouters=${validRouters.map((r: any) => `${r.name}(${r.version})`).join(', ')}`);
+    const WMATIC_ADDR = '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
+    pairs.results.sort((a: any, b: any) => {
+      const aHasWmatic = a.token_a?.toLowerCase() === WMATIC_ADDR || a.token_b?.toLowerCase() === WMATIC_ADDR ? 1 : 0;
+      const bHasWmatic = b.token_a?.toLowerCase() === WMATIC_ADDR || b.token_b?.toLowerCase() === WMATIC_ADDR ? 1 : 0;
+      return bHasWmatic - aHasWmatic;
+    });
     for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
       const pair = pairs.results[pIdx];
       let routerPairsDone = 0;

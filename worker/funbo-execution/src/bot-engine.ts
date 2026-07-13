@@ -319,13 +319,14 @@ async function ensureWmaticBalance(
   wallet: ethers.Wallet,
   provider: ethers.Provider,
   tokenA: string,
-  amountInWei: bigint
+  amountInWei: bigint,
+  env?: any
 ): Promise<void> {
   if (tokenA.toLowerCase() !== WMATIC_ADDRESS) return;
 
   const wmatic = new ethers.Contract(WMATIC_ADDRESS, WMATIC_ABI, wallet);
   const balance = await wmatic.balanceOf(wallet.address) as bigint;
-  const targetBalance = amountInWei * 2n; // need 2x to pass 50% maxBalancePct check
+  const targetBalance = amountInWei * 2n;
   if (balance >= targetBalance) {
     console.log(`[executor] WMATIC balance OK: ${ethers.formatEther(balance)} (target ${ethers.formatEther(targetBalance)})`);
     return;
@@ -333,17 +334,32 @@ async function ensureWmaticBalance(
 
   const needed = targetBalance - balance;
   const nativeBalance = await provider.getBalance(wallet.address);
-  const gasReserve = ethers.parseEther('0.1');
+  const gasReserve = ethers.parseEther('0.5');
   const wrapAmount = nativeBalance > needed + gasReserve ? needed : (nativeBalance > gasReserve ? nativeBalance - gasReserve : 0n);
 
   if (wrapAmount <= 0n) {
-    console.log(`[executor] skip wrap: MATIC balance ${ethers.formatEther(nativeBalance)} insufficient`);
+    console.log(`[executor] skip wrap: MATIC balance ${ethers.formatEther(nativeBalance)} insufficient (need ${ethers.formatEther(needed + gasReserve)})`);
     return;
   }
 
   console.log(`[executor] wrapping ${ethers.formatEther(wrapAmount)} MATIC → WMATIC (have ${ethers.formatEther(balance)} WMATIC, target ${ethers.formatEther(targetBalance)}, native ${ethers.formatEther(nativeBalance)})`);
-  const tx = await wmatic.deposit({ value: wrapAmount });
-  console.log(`[executor] wrapped OK tx=${tx.hash}`);
+  try {
+    const tx = await wmatic.deposit({
+      value: wrapAmount,
+      gasLimit: 100000,
+      maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
+      maxFeePerGas: ethers.parseEther('0.1'),
+    });
+    const receipt = await waitTx(tx, 1, 30000);
+    if (!receipt || receipt.status === 0) {
+      console.error(`[executor] WMATIC wrap failed: tx=${tx.hash}`);
+    } else {
+      const newBalance = await wmatic.balanceOf(wallet.address) as bigint;
+      console.log(`[executor] wrapped OK tx=${tx.hash} new WMATIC=${ethers.formatEther(newBalance)}`);
+    }
+  } catch (err: any) {
+    console.error(`[executor] WMATIC wrap error: ${err.message}`);
+  }
 }
 
 const ERC20_ABI = [
