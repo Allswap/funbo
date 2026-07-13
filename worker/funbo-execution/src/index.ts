@@ -65,35 +65,49 @@ app.post('/api/debug/execute', async (c) => {
 
   try {
     log('start');
-    await DB.prepare("UPDATE opportunities SET status = 'skipped', error_msg = 'Stale: pending >1h' WHERE status = 'pending' AND created_at < datetime('now', '-1 hour')").run();
-    log('stale cleanup done');
-    const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 5').all() as { results: any[] };
+    const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 1').all() as { results: any[] };
     log(`pending: ${pending.results.length}`);
-    for (const opp of pending.results) {
-      log(`opp #${opp.id}: router_a=${opp.router_a?.slice(0,10)} router_b=${opp.router_b?.slice(0,10)} profit=${opp.profit_pct}`);
-    }
-    const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
-    const networkMap = Object.fromEntries(networks.results.map((n: any) => [n.chain_id, n]));
-    log(`networks: ${Object.keys(networkMap).join(',')}`);
-    const net = networkMap[137];
-    log(`net found: ${!!net}, rpc: ${net?.rpc_url?.slice(0,40)}, mev: ${net?.mev_protected_rpc?.slice(0,40)}`);
-    const wallets = await DB.prepare('SELECT * FROM wallets WHERE is_active = 1 AND chain_id = 137').all() as { results: any[] };
-    log(`wallets: ${wallets.results.length}, addr: ${wallets.results[0]?.address?.slice(0,10)}`);
+    if (pending.results.length === 0) return c.json({ logs, message: 'no pending opps', debug: true });
 
-    if (pending.results.length > 0) {
-      const opp = pending.results[0];
-      const { getWorkingProvider } = await import('./rpc-pool');
-      log('calling getWorkingProvider...');
-      try {
-        const { provider, url } = await Promise.race([
-          getWorkingProvider(c.env, net.rpc_url, '', DB, 137),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('getWorkingProvider timeout')), 20000))
-        ]);
-        log(`provider ready: ${url?.slice(0,40)}`);
-      } catch (err: any) {
-        log(`getWorkingProvider ERROR: ${err.message}`);
-      }
+    const opp = pending.results[0];
+    log(`opp #${opp.id}: ${opp.token_a?.slice(0,10)} / ${opp.token_b?.slice(0,10)} profit=${opp.profit_pct}`);
+
+    const networks = await DB.prepare('SELECT * FROM networks WHERE chain_id = 137').first() as any;
+    const { getWorkingProvider } = await import('./rpc-pool');
+    log('getWorkingProvider...');
+    const { provider, url: rpcUrl } = await getWorkingProvider(c.env, networks.rpc_url, '', DB, 137);
+    log(`provider: ${rpcUrl?.slice(0,40)}`);
+
+    log('creating wallet...');
+    const mevRpc = networks.mev_protected_rpc || networks.rpc_url;
+    const wallet = new (await import('ethers')).ethers.Wallet(c.env.PRIVATE_KEY!, new (await import('ethers')).ethers.JsonRpcProvider(mevRpc));
+    log(`wallet: ${wallet.address?.slice(0,10)}`);
+
+    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = 137 AND is_active = 1').all() as { results: any[] };
+    const routerA = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_a?.toLowerCase());
+    const routerB = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_b?.toLowerCase());
+    log(`routerA: ${routerA?.name} routerB: ${routerB?.name}`);
+
+    const { rawQuoteRoute } = await import('../../shared/quotes');
+    log('quoting on routerA...');
+    const qA = await Promise.race([
+      rawQuoteRoute(rpcUrl, opp.token_a, opp.token_b, routerA, 3000),
+      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('quoteA timeout')), 10000))
+    ]);
+    log(`quoteA: ${qA}`);
+
+    log('quoting on routerB...');
+    const qB = await Promise.race([
+      rawQuoteRoute(rpcUrl, opp.token_a, opp.token_b, routerB, 3000),
+      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('quoteB timeout')), 10000))
+    ]);
+    log(`quoteB: ${qB}`);
+
+    if (qA && qB) {
+      const spread = qA > qB ? Number((qA - qB) * 10000n / qB) / 100 : Number((qB - qA) * 10000n / qA) / 100;
+      log(`spread: ${spread}%`);
     }
+
     return c.json({ logs, debug: true });
   } catch (err: any) {
     log(`FATAL: ${err.message}`);
