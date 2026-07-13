@@ -74,6 +74,16 @@ interface NetworkConfig {
   mev_protected_rpc?: string;
 }
 
+function getMevProtectedProvider(env: Env, network: NetworkConfig): ethers.JsonRpcProvider {
+  if (env.BLOCKPI_API_KEY) {
+    return new ethers.JsonRpcProvider(`https://polygon.blockpi.network/v1/rpc/${env.BLOCKPI_API_KEY}`);
+  }
+  if (network.mev_protected_rpc) {
+    return new ethers.JsonRpcProvider(network.mev_protected_rpc);
+  }
+  return new ethers.JsonRpcProvider(network.rpc_url);
+}
+
 export interface TradeResult {
   success: boolean;
   strategy: string;
@@ -1000,9 +1010,7 @@ export async function executeOpportunity(
   const minNetProfitPct = parseFloat(cfgMap[`min_net_profit_pct_${strategy}`] || cfgMap.min_net_profit_pct || '0.1');
 
   const { provider } = await getWorkingProvider(env, network.rpc_url, defaultRpcPool, db, network.chain_id);
-  const mevProviderUrl = network.mev_protected_rpc || network.rpc_url;
-  const mevProvider = new ethers.JsonRpcProvider(mevProviderUrl);
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, mevProvider);
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(network.chain_id).all() as { results: any[] };
   const routerA = routers.results.find((r: any) => r.address.toLowerCase() === opp.router_a.toLowerCase());
@@ -1273,9 +1281,7 @@ export async function executeTriangularArb(
   const feeTier = defaultFeeTier || 3000;
 
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', db, network.chain_id);
-  const mevProviderUrl = network.mev_protected_rpc || network.rpc_url;
-  const mevProvider = new ethers.JsonRpcProvider(mevProviderUrl);
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, mevProvider);
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const tokenA = opp.token_a;
   const tokenB = opp.token_b;
@@ -1489,8 +1495,7 @@ export async function runBotStrategy(
   chainId?: number
 ): Promise<TradeResult> {
   const { provider } = await getWorkingProvider(env, network.rpc_url, defaultRpcPool, db, chainId);
-  const mevProviderUrl = network.mev_protected_rpc || network.rpc_url;
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, new ethers.JsonRpcProvider(mevProviderUrl));
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
   const DB = env['funbo-db'];
 
   const tokenARes = await DB.prepare('SELECT value FROM config WHERE key = "trade_token_a"').first() as { value: string } | null;
@@ -1766,8 +1771,7 @@ export async function executeSpotBuy(
   const maxDecimals = parseInt(spotCfgMap.max_decimals || '3');
   const dailyLossLimit = parseFloat(spotCfgMap.daily_loss_limit || '5');
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', db, network.chain_id);
-  const mevProviderUrl = network.mev_protected_rpc || network.rpc_url;
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, new ethers.JsonRpcProvider(mevProviderUrl));
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const tradeAmount = strat.trade_amount || '10';
   const [stableDecimals, tokenDecimals] = await Promise.all([
@@ -1943,7 +1947,7 @@ export async function executeSoloSpotFromOpp(
   const maxDecimals = slotCfgMap.max_decimals ? parseInt(slotCfgMap.max_decimals) : 18;
 
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', db, opp.chain_id);
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, new ethers.JsonRpcProvider(network.mev_protected_rpc || network.rpc_url));
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const [pairTokenDec, configuredTokenDec] = await Promise.all([
     getTokenDecimals(provider, pairToken, opp.chain_id),
@@ -2145,7 +2149,7 @@ export async function executeSpotSell(
   const minBalanceAmount = sellCfgMap.min_balance_amount || '0';
   const dailyLossLimit = parseFloat(sellCfgMap.daily_loss_limit || '5');
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', db, network.chain_id);
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, new ethers.JsonRpcProvider(network.mev_protected_rpc || network.rpc_url));
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 const tokenDec = await getTokenDecimals(provider, position.token_address, network.chain_id);
    const stableDec = position.stablecoin_address ? await getTokenDecimals(provider, position.stablecoin_address, network.chain_id) : 18;
   const sellAmountWei = ethers.parseUnits(position.amount_bought, tokenDec);
@@ -2297,7 +2301,7 @@ export async function executeMMRebalance(
   if (!cfg) return { success: false, strategy: 'mm_rebalance', tokenA: opp.token_a, tokenB: opp.token_b, amountIn: '0', amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'Config not found or inactive' };
 
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', DB, network.chain_id);
-  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, new ethers.JsonRpcProvider(network.mev_protected_rpc || network.rpc_url));
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(network.chain_id).all() as { results: any[] };
   const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? !!r.quoter_address : true));
