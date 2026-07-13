@@ -74,10 +74,7 @@ interface NetworkConfig {
   mev_protected_rpc?: string;
 }
 
-function getMevProtectedProvider(env: Env, network: NetworkConfig): ethers.JsonRpcProvider {
-  if (env.BLOCKPI_API_KEY) {
-    return new ethers.JsonRpcProvider(`https://polygon.blockpi.network/v1/rpc/${env.BLOCKPI_API_KEY}`);
-  }
+function getMevProtectedProvider(_env: Env, network: NetworkConfig): ethers.JsonRpcProvider {
   if (network.mev_protected_rpc) {
     return new ethers.JsonRpcProvider(network.mev_protected_rpc);
   }

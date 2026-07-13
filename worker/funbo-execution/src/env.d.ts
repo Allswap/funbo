@@ -11,7 +11,6 @@ interface Env {
   GETBLOCK_API_KEY?: string;
   MORALIS_API_KEY?: string;
   BLOCKSCOUT_API_KEY?: string;
-  BLOCKPI_API_KEY?: string;
   CORS_ORIGIN?: string;
   FUNBO_R2?: R2Bucket;
 }
