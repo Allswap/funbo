@@ -41,6 +41,18 @@ export async function logTradeReceipt(env: Env, trade: any): Promise<void> {
 
 const decimalCache = new Map<string, number>();
 
+async function waitTx(tx: ethers.TransactionResponse, confirmations: number = 1, timeoutMs: number = 30000): Promise<ethers.TransactionReceipt | null> {
+  try {
+    return await Promise.race([
+      tx.wait(confirmations),
+      new Promise<null>((_, rej) => setTimeout(() => rej(new Error(`tx.wait timeout after ${timeoutMs}ms`)), timeoutMs))
+    ]);
+  } catch (err: any) {
+    console.warn(`[waitTx] timeout/error: ${err.message} tx=${tx.hash?.slice(0,10)}`);
+    return null;
+  }
+}
+
 async function getTokenDecimals(provider: ethers.Provider, token: string, chainId?: number): Promise<number> {
   const key = chainId ? `${chainId}:${token.toLowerCase()}` : token.toLowerCase();
   const cached = decimalCache.get(key);
@@ -195,7 +207,7 @@ async function executeAndRecordTransaction(
       txStatus: 'pending',
     });
 
-    receipt = await txResp.wait(1);
+    receipt = await waitTx(txResp, 1, 30000);
 
     const gasUsed = Number(receipt.gasUsed);
     const gasPrice = receipt.gasPrice ? Number(receipt.gasPrice) / 1e9 : 0;
@@ -719,7 +731,7 @@ async function ensureAllowance(
       maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
       maxFeePerGas: ethers.parseUnits('90', 'gwei'),
     });
-    const receipt = await tx.wait();
+    const receipt = await waitTx(tx, 1, 30000);
     if (!receipt || receipt.status === 0) {
       console.error(`[allowance] approve tx failed: ${tx.hash}`);
       return false;
@@ -1026,6 +1038,12 @@ export async function executeOpportunity(
 
   await ensureWmaticBalance(wallet, provider, tokenA, ethers.parseEther(tradeAmount));
 
+  const tokenABalance = await (new ethers.Contract(tokenA, ['function balanceOf(address) view returns (uint256)'], provider)).balanceOf(wallet.address) as bigint;
+  if (tokenABalance === 0n) {
+    console.log(`[executor] opp #${opp.id} skip: zero ${tokenA.slice(0,10)} balance`);
+    return { success: false, strategy: 'arb', tokenA, tokenB, amountIn: '0', amountOut: '0', profitPct: opp.profit_pct || 0, status: 'skipped', txHash: null, errorMsg: `Zero input token balance` };
+  }
+
   const dailyLossLimitRes = await DB.prepare('SELECT value FROM config WHERE key = "daily_loss_limit"').first() as { value: string } | null;
   const dailyLossLimit = dailyLossLimitRes ? parseFloat(dailyLossLimitRes.value) : 5.0;
   const breaker = await checkCircuitBreaker(DB, dailyLossLimit);
@@ -1120,7 +1138,7 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          const appReceipt = await appTx.wait();
+          const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
@@ -1157,7 +1175,7 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
     const buyResp = await executeLegWithMode(tokenA, tokenB, tradeAmount, slippagePct, buyRouter, buyVersion, dA);
     txHash = buyResp.hash;
     console.log(`[executor] opp #${opp.id} buy OK tx=${buyResp.hash}`);
-    await buyResp.wait(1);
+    await waitTx(buyResp, 1, 30000);
 
     const tokenBContract = new ethers.Contract(tokenB, ERC20_ABI, wallet);
     const tokenBRecv = await tokenBContract.balanceOf(wallet.address) as bigint;
@@ -1167,7 +1185,7 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
       const sellResp = await executeLegWithMode(tokenB, tokenA, sellAmountFormatted, slippagePct, sellRouter, sellVersion, dB);
       txHash = `${txHash},${sellResp.hash}`;
       console.log(`[executor] opp #${opp.id} sell OK tx=${sellResp.hash}`);
-      await sellResp.wait(1);
+      await waitTx(sellResp, 1, 30000);
     } else {
       console.log(`[executor] opp #${opp.id} no tokenB received from buy`);
     }
@@ -1357,7 +1375,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          const appReceipt = await appTx.wait();
+          const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const quote = await quoteAmountOut(provider, from, to, amountInWei, router, feeTier);
@@ -1406,7 +1424,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
     const r1 = await triExecuteLeg(tokenA, tokenB, tradeAmountStr, dA);
     txHash = r1.hash;
     console.log(`[tri] leg1 A→B OK tx=${r1.hash}`);
-    await r1.wait(1);
+    await waitTx(r1, 1, 30000);
 
     const bRecv = await new ethers.Contract(tokenB, ERC20_ABI, provider).balanceOf(wallet.address) as bigint;
     if (bRecv <= 0n) {
@@ -1417,7 +1435,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
     const r2 = await triExecuteLeg(tokenB, tokenC, bAmount, dB);
     txHash = `${r1.hash},${r2.hash}`;
     console.log(`[tri] leg2 B→C OK tx=${r2.hash}`);
-    await r2.wait(1);
+    await waitTx(r2, 1, 30000);
 
     const cRecv = await new ethers.Contract(tokenC, ERC20_ABI, provider).balanceOf(wallet.address) as bigint;
     if (cRecv <= 0n) {
@@ -1428,7 +1446,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
     const r3 = await triExecuteLeg(tokenC, tokenA, cAmount, dC);
     txHash = `${r1.hash},${r2.hash},${r3.hash}`;
     console.log(`[tri] leg3 C→A OK tx=${r3.hash}`);
-    await r3.wait(1);
+    await waitTx(r3, 1, 30000);
 
     const afterA = await new ethers.Contract(tokenA, ERC20_ABI, provider).balanceOf(wallet.address) as bigint;
     const aChange = afterA - beforeA;
@@ -1668,7 +1686,7 @@ export async function runBotStrategy(
             maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
             maxFeePerGas: ethers.parseUnits('90', 'gwei'),
           });
-          const appReceipt = await appTx.wait();
+          const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
@@ -1707,7 +1725,7 @@ export async function runBotStrategy(
   try {
     const legResp = await soloExecuteLeg(foundTokenA, foundTokenB, tradeAmount, buyRouter, dTokenA);
     txHash = legResp.hash;
-    await legResp.wait(1);
+    await waitTx(legResp, 1, 30000);
   } catch (err: any) {
     return { success: false, strategy: strategyType, tokenA: foundTokenA, tokenB: foundTokenB, amountIn: tradeAmount, amountOut: '0', profitPct: arb.profitPct, status: 'failed', txHash: null, errorMsg: err.message };
   }
@@ -1846,7 +1864,7 @@ export async function executeSpotBuy(
   try {
     const swapResp = await executeSwap(env, provider, wallet, strat.stablecoin_address, strat.token_address, tradeAmount, slippageResult.optimal, strat.router_address, network.chain_id, stableDecimals);
     txHash = swapResp.hash;
-    await swapResp.wait(1);
+    await waitTx(swapResp, 1, 30000);
   } catch (err: any) {
     return { success: false, strategy: 'spot', tokenA: strat.stablecoin_address, tokenB: strat.token_address, amountIn: tradeAmount, amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: err.message };
   }
@@ -2051,7 +2069,7 @@ export async function executeSoloSpotFromOpp(
   try {
     const buyResp = await executeSwap(env, provider, wallet, pairToken, configuredToken, ethers.formatUnits(tradeAmountWei, pairTokenDec), (slippageBuy || { optimal: minSlippagePct }).optimal, best.buyRouter.address, opp.chain_id, pairTokenDec);
     buyTxHash = buyResp.hash;
-    await buyResp.wait(1);
+    await waitTx(buyResp, 1, 30000);
   } catch (err: any) { return { success: false, strategy: 'solo_spot', tokenA: pairToken, tokenB: configuredToken, amountIn: ethers.formatUnits(tradeAmountWei, pairTokenDec), amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: `Buy failed: ${err.message}` }; }
   if (!buyTxHash) return { success: false, strategy: 'solo_spot', tokenA: pairToken, tokenB: configuredToken, amountIn: ethers.formatUnits(tradeAmountWei, pairTokenDec), amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: 'Buy tx not submitted' };
 
@@ -2059,7 +2077,7 @@ export async function executeSoloSpotFromOpp(
   try {
     const sellResp = await executeSwap(env, provider, wallet, configuredToken, pairToken, ethers.formatUnits(boughtAmount, configuredTokenDec), (slippageSell || { optimal: minSlippagePct }).optimal, best.sellRouter.address, opp.chain_id, configuredTokenDec);
     sellTxHash = sellResp.hash;
-    await sellResp.wait(1);
+    await waitTx(sellResp, 1, 30000);
   } catch (err: any) { return { success: false, strategy: 'solo_spot', tokenA: pairToken, tokenB: configuredToken, amountIn: ethers.formatUnits(tradeAmountWei, pairTokenDec), amountOut: '0', profitPct: 0, status: 'failed', txHash: buyTxHash, errorMsg: `Sell failed: ${err.message}` }; }
 
   const afterState = await getWalletState(provider, wallet.address, pairToken, configuredToken);
@@ -2214,7 +2232,7 @@ const tokenDec = await getTokenDecimals(provider, position.token_address, networ
   try {
     const swapResp = await executeSwap(env, provider, wallet, position.token_address, position.stablecoin_address, sellAmount, slippageResult.optimal, position.router_address, network.chain_id, tokenDec);
     txHash = swapResp.hash;
-    await swapResp.wait(1);
+    await waitTx(swapResp, 1, 30000);
   } catch (err: any) {
     return { success: false, strategy: 'spot', tokenA: position.token_address, tokenB: position.stablecoin_address, amountIn: sellAmount, amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: err.message };
   }
@@ -2339,11 +2357,11 @@ export async function executeMMRebalance(
       if (!quoterAddr) throw new Error('V3 router missing quoter');
       const swapResp = await executeSwapV3(env, provider, wallet, tokenIn, tokenOut, tradeAmount, slippageResult.optimal, router.address, quoterAddr, defaultFeeTier);
       txHash = swapResp.hash;
-      await swapResp.wait(1);
+      await waitTx(swapResp, 1, 30000);
     } else {
       const swapResp = await executeSwap(env, provider, wallet, tokenIn, tokenOut, tradeAmount, slippageResult.optimal, router.address, network.chain_id);
       txHash = swapResp.hash;
-      await swapResp.wait(1);
+      await waitTx(swapResp, 1, 30000);
     }
   } catch (err: any) {
     return { success: false, strategy: 'mm_rebalance', tokenA: tokenIn, tokenB: tokenOut, amountIn: tradeAmount, amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: err.message };

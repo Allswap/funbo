@@ -38,7 +38,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
 
   const path = c.req.path.replace(/\/+/g, '/');
-  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute', '/api/debug/execute'];
+  const publicPaths = ['/api/health', '/api/cron/execute', '/api/cron/scan-and-execute'];
   if (publicPaths.includes(path)) return next();
 
   const apiKey = c.req.header('X-API-Key');
@@ -55,63 +55,6 @@ app.get('/api/health', (c) => c.json({ status: 'ok', worker: 'funbo-execution' }
 app.post('/api/bot/run', async (c) => {
   const result = await executePendingOpportunities(c.env);
   return c.json(result);
-});
-
-app.post('/api/debug/execute', async (c) => {
-  const DB = c.env['funbo-db'];
-  const logs: string[] = [];
-  const t0 = Date.now();
-  const log = (msg: string) => { logs.push(`[${Date.now()-t0}ms] ${msg}`); };
-
-  try {
-    const { ethers } = await import('ethers');
-    const { getWorkingProvider } = await import('./rpc-pool');
-    const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 1').all() as { results: any[] };
-    if (pending.results.length === 0) return c.json({ logs: ['no pending opps'], debug: true });
-
-    const opp = pending.results[0];
-    log(`opp #${opp.id}: ${opp.token_a?.slice(0,10)} / ${opp.token_b?.slice(0,10)} profit=${opp.profit_pct}`);
-
-    const networks = await DB.prepare('SELECT * FROM networks WHERE chain_id = 137').first() as any;
-    const { provider, url: rpcUrl } = await getWorkingProvider(c.env, networks.rpc_url, '', DB, 137);
-    log(`provider: ${rpcUrl?.slice(0,30)}`);
-
-    const V2_ABI = ['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[])'];
-    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = 137 AND is_active = 1').all() as { results: any[] };
-    const routerA = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_a?.toLowerCase());
-    const routerB = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_b?.toLowerCase());
-
-    const amountIn = ethers.parseEther('0.1');
-    const routerAContract = new ethers.Contract(routerA.address, V2_ABI, provider);
-    const routerBContract = new ethers.Contract(routerB.address, V2_ABI, provider);
-
-    log('getAmountsOut on routerA...');
-    try {
-      const amountsA = await Promise.race([
-        routerAContract.getAmountsOut(amountIn, [opp.token_a, opp.token_b]),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('routerA getAmountsOut timeout')), 8000))
-      ]);
-      log(`routerA result: ${amountsA}`);
-    } catch (err: any) {
-      log(`routerA ERROR: ${err.message}`);
-    }
-
-    log('getAmountsOut on routerB...');
-    try {
-      const amountsB = await Promise.race([
-        routerBContract.getAmountsOut(amountIn, [opp.token_a, opp.token_b]),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('routerB getAmountsOut timeout')), 8000))
-      ]);
-      log(`routerB result: ${amountsB}`);
-    } catch (err: any) {
-      log(`routerB ERROR: ${err.message}`);
-    }
-
-    return c.json({ logs, debug: true });
-  } catch (err: any) {
-    log(`FATAL: ${err.message}`);
-    return c.json({ logs, error: err.message, debug: true }, 500);
-  }
 });
 
 app.post('/api/cron/execute', async (c) => {
