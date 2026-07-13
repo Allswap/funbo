@@ -65,6 +65,7 @@ app.post('/api/debug/execute', async (c) => {
 
   try {
     const { ethers } = await import('ethers');
+    const { getWorkingProvider } = await import('./rpc-pool');
     const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 1').all() as { results: any[] };
     if (pending.results.length === 0) return c.json({ logs: ['no pending opps'], debug: true });
 
@@ -72,53 +73,39 @@ app.post('/api/debug/execute', async (c) => {
     log(`opp #${opp.id}: ${opp.token_a?.slice(0,10)} / ${opp.token_b?.slice(0,10)} profit=${opp.profit_pct}`);
 
     const networks = await DB.prepare('SELECT * FROM networks WHERE chain_id = 137').first() as any;
-    const mevRpc = networks.mev_protected_rpc || networks.rpc_url;
-    const wallet = new ethers.Wallet(c.env.PRIVATE_KEY!, new ethers.JsonRpcProvider(mevRpc));
-    log(`wallet: ${wallet.address?.slice(0,10)}`);
+    const { provider, url: rpcUrl } = await getWorkingProvider(c.env, networks.rpc_url, '', DB, 137);
+    log(`provider: ${rpcUrl?.slice(0,30)}`);
 
+    const V2_ABI = ['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[])'];
     const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = 137 AND is_active = 1').all() as { results: any[] };
     const routerA = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_a?.toLowerCase());
     const routerB = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_b?.toLowerCase());
-    if (!routerA || !routerB) return c.json({ logs: [...logs, 'router not found'], debug: true });
 
-    const ERC20_ABI = ['function allowance(address,address) view returns (uint256)','function approve(address,uint256) returns (bool)','function balanceOf(address) view returns (uint256)'];
-    const tokenA = new ethers.Contract(opp.token_a, ERC20_ABI, wallet);
-    const tokenB = new ethers.Contract(opp.token_b, ERC20_ABI, wallet);
+    const amountIn = ethers.parseEther('0.1');
+    const routerAContract = new ethers.Contract(routerA.address, V2_ABI, provider);
+    const routerBContract = new ethers.Contract(routerB.address, V2_ABI, provider);
 
-    log('checking tokenA allowance...');
-    const allowanceA = await Promise.race([
-      tokenA.allowance(wallet.address, routerA.address),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('allowanceA timeout')), 8000))
-    ]);
-    log(`allowanceA: ${allowanceA}`);
+    log('getAmountsOut on routerA...');
+    try {
+      const amountsA = await Promise.race([
+        routerAContract.getAmountsOut(amountIn, [opp.token_a, opp.token_b]),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('routerA getAmountsOut timeout')), 8000))
+      ]);
+      log(`routerA result: ${amountsA}`);
+    } catch (err: any) {
+      log(`routerA ERROR: ${err.message}`);
+    }
 
-    log('checking tokenB allowance...');
-    const allowanceB = await Promise.race([
-      tokenB.allowance(wallet.address, routerB.address),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('allowanceB timeout')), 8000))
-    ]);
-    log(`allowanceB: ${allowanceB}`);
-
-    log('checking tokenA balance...');
-    const balanceA = await Promise.race([
-      tokenA.balanceOf(wallet.address),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('balanceA timeout')), 8000))
-    ]);
-    log(`balanceA: ${balanceA}`);
-
-    log('checking tokenB balance...');
-    const balanceB = await Promise.race([
-      tokenB.balanceOf(wallet.address),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('balanceB timeout')), 8000))
-    ]);
-    log(`balanceB: ${balanceB}`);
-
-    log('checking MATIC balance...');
-    const maticBal = await Promise.race([
-      wallet.provider!.getBalance(wallet.address),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('matic timeout')), 8000))
-    ]);
-    log(`matic: ${ethers.formatEther(maticBal)}`);
+    log('getAmountsOut on routerB...');
+    try {
+      const amountsB = await Promise.race([
+        routerBContract.getAmountsOut(amountIn, [opp.token_a, opp.token_b]),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('routerB getAmountsOut timeout')), 8000))
+      ]);
+      log(`routerB result: ${amountsB}`);
+    } catch (err: any) {
+      log(`routerB ERROR: ${err.message}`);
+    }
 
     return c.json({ logs, debug: true });
   } catch (err: any) {
