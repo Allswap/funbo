@@ -58,11 +58,46 @@ app.post('/api/bot/run', async (c) => {
 });
 
 app.post('/api/debug/execute', async (c) => {
+  const DB = c.env['funbo-db'];
+  const logs: string[] = [];
+  const t0 = Date.now();
+  const log = (msg: string) => { logs.push(`[${Date.now()-t0}ms] ${msg}`); };
+
   try {
-    const result = await executePendingOpportunities(c.env);
-    return c.json({ ...result, debug: true });
+    log('start');
+    await DB.prepare("UPDATE opportunities SET status = 'skipped', error_msg = 'Stale: pending >1h' WHERE status = 'pending' AND created_at < datetime('now', '-1 hour')").run();
+    log('stale cleanup done');
+    const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 5').all() as { results: any[] };
+    log(`pending: ${pending.results.length}`);
+    for (const opp of pending.results) {
+      log(`opp #${opp.id}: router_a=${opp.router_a?.slice(0,10)} router_b=${opp.router_b?.slice(0,10)} profit=${opp.profit_pct}`);
+    }
+    const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
+    const networkMap = Object.fromEntries(networks.results.map((n: any) => [n.chain_id, n]));
+    log(`networks: ${Object.keys(networkMap).join(',')}`);
+    const net = networkMap[137];
+    log(`net found: ${!!net}, rpc: ${net?.rpc_url?.slice(0,40)}, mev: ${net?.mev_protected_rpc?.slice(0,40)}`);
+    const wallets = await DB.prepare('SELECT * FROM wallets WHERE is_active = 1 AND chain_id = 137').all() as { results: any[] };
+    log(`wallets: ${wallets.results.length}, addr: ${wallets.results[0]?.address?.slice(0,10)}`);
+
+    if (pending.results.length > 0) {
+      const opp = pending.results[0];
+      const { getWorkingProvider } = await import('./rpc-pool');
+      log('calling getWorkingProvider...');
+      try {
+        const { provider, url } = await Promise.race([
+          getWorkingProvider(c.env, net.rpc_url, '', DB, 137),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('getWorkingProvider timeout')), 20000))
+        ]);
+        log(`provider ready: ${url?.slice(0,40)}`);
+      } catch (err: any) {
+        log(`getWorkingProvider ERROR: ${err.message}`);
+      }
+    }
+    return c.json({ logs, debug: true });
   } catch (err: any) {
-    return c.json({ error: err.message, stack: err.stack, debug: true }, 500);
+    log(`FATAL: ${err.message}`);
+    return c.json({ logs, error: err.message, debug: true }, 500);
   }
 });
 
