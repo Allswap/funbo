@@ -64,54 +64,28 @@ app.post('/api/debug/execute', async (c) => {
   const log = (msg: string) => { logs.push(`[${Date.now()-t0}ms] ${msg}`); };
 
   try {
-    log('start');
+    const { executeOpportunity, executeTriangularArb, TradeResult } = await import('./bot-engine');
     const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 1').all() as { results: any[] };
-    log(`pending: ${pending.results.length}`);
-    if (pending.results.length === 0) return c.json({ logs, message: 'no pending opps', debug: true });
+    if (pending.results.length === 0) return c.json({ logs: ['no pending opps'], debug: true });
 
     const opp = pending.results[0];
-    log(`opp #${opp.id}: ${opp.token_a?.slice(0,10)} / ${opp.token_b?.slice(0,10)} profit=${opp.profit_pct}`);
+    log(`opp #${opp.id}: ${opp.token_a?.slice(0,10)} / ${opp.token_b?.slice(0,10)} profit=${opp.profit_pct} router_a=${opp.router_a?.slice(0,10)} router_b=${opp.router_b?.slice(0,10)}`);
 
     const networks = await DB.prepare('SELECT * FROM networks WHERE chain_id = 137').first() as any;
-    const { getWorkingProvider } = await import('./rpc-pool');
-    log('getWorkingProvider...');
-    const { provider, url: rpcUrl } = await getWorkingProvider(c.env, networks.rpc_url, '', DB, 137);
-    log(`provider: ${rpcUrl?.slice(0,40)}`);
+    const wallets = await DB.prepare('SELECT * FROM wallets WHERE is_active = 1 AND chain_id = 137').all() as { results: any[] };
+    log(`wallet: ${wallets.results[0]?.address?.slice(0,10)}`);
 
-    log('creating wallet...');
-    const mevRpc = networks.mev_protected_rpc || networks.rpc_url;
-    const wallet = new (await import('ethers')).ethers.Wallet(c.env.PRIVATE_KEY!, new (await import('ethers')).ethers.JsonRpcProvider(mevRpc));
-    log(`wallet: ${wallet.address?.slice(0,10)}`);
-
-    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = 137 AND is_active = 1').all() as { results: any[] };
-    const routerA = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_a?.toLowerCase());
-    const routerB = routers.results.find((r: any) => r.address?.toLowerCase() === opp.router_b?.toLowerCase());
-    log(`routerA: ${routerA?.name} routerB: ${routerB?.name}`);
-
-    const { rawQuoteRoute } = await import('../../shared/quotes');
-    log('quoting on routerA...');
-    const qA = await Promise.race([
-      rawQuoteRoute(rpcUrl, opp.token_a, opp.token_b, routerA, 3000),
-      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('quoteA timeout')), 10000))
+    log('calling executeOpportunity...');
+    const result = await Promise.race([
+      executeOpportunity(c.env, networks, opp, wallets.results[0].address, DB, 3000),
+      new Promise<TradeResult>((_, rej) => setTimeout(() => rej({ success: false, strategy: 'timeout', tokenA: opp.token_a, tokenB: opp.token_b, amountIn: '0', amountOut: '0', profitPct: 0, status: 'failed', txHash: null, errorMsg: 'timeout' } as TradeResult), 30000))
     ]);
-    log(`quoteA: ${qA}`);
+    log(`result: status=${result.status} success=${result.success} txHash=${result.txHash?.slice(0,10) || 'none'} error=${result.errorMsg || 'none'}`);
 
-    log('quoting on routerB...');
-    const qB = await Promise.race([
-      rawQuoteRoute(rpcUrl, opp.token_a, opp.token_b, routerB, 3000),
-      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('quoteB timeout')), 10000))
-    ]);
-    log(`quoteB: ${qB}`);
-
-    if (qA && qB) {
-      const spread = qA > qB ? Number((qA - qB) * 10000n / qB) / 100 : Number((qB - qA) * 10000n / qA) / 100;
-      log(`spread: ${spread}%`);
-    }
-
-    return c.json({ logs, debug: true });
+    return c.json({ logs, result, debug: true });
   } catch (err: any) {
     log(`FATAL: ${err.message}`);
-    return c.json({ logs, error: err.message, debug: true }, 500);
+    return c.json({ logs, error: err.message, stack: err.stack?.slice(0, 500), debug: true }, 500);
   }
 });
 
