@@ -20,3 +20,4 @@ dist/
 .dev.vars
 worker/*/.dev.vars
 hardhat/.env
+.continue/
