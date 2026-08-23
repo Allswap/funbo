@@ -43,12 +43,14 @@ const MIGRATIONS = [
     (137, '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', 'WMATIC/USDT'),
     (137, '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', 'ETH/USDT');
   ` },
-  { id: '030_add_mm_label_and_brt_modes', sql: `
-    ALTER TABLE mm_lp_configs ADD COLUMN label TEXT;
+  { id: '030_add_mm_label_column', sql: `ALTER TABLE mm_lp_configs ADD COLUMN label TEXT` },
+  { id: '031_seed_brt_mm_modes', sql: `
     INSERT OR IGNORE INTO mm_lp_configs (chain_id, token_address, lp_address, rebalance_threshold_pct, trade_amount, label, is_active) VALUES
     (137, '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b', '0xc445b18b3ff85e0691fe416ad91e456f8697b166', 2.0, '25', 'BRT-low', 1),
     (137, '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b', '0xc445b18b3ff85e0691fe416ad91e456f8697b166', 5.0, '120', 'BRT-med', 0),
     (137, '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b', '0xc445b18b3ff85e0691fe416ad91e456f8697b166', 8.0, '600', 'BRT-high', 0);
+  ` },
+  { id: '032_seed_brt_config_and_pair', sql: `
     INSERT OR IGNORE INTO config (key, value) VALUES ('mm_brt_mode', 'auto');
     INSERT OR IGNORE INTO token_pairs (chain_id, token_a, token_b, label) VALUES (137, '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b', '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', 'BRT/WPOL');
   ` },
