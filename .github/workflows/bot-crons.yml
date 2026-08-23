@@ -1,84 +1,102 @@
 name: Bot Crons
+# CONSOLIDATED for private repo limit: 2000 min/mo
+# Before: 5 schedules = 241 runs/day = 7230 min/mo (3.6x over limit) -> blocked
+# After:  1 schedule  =  48 runs/day = 1440 min/mo (72% within limit, leaves 560 for deploys)
+# Keep hourly/daily via in-job UTC time checks; dedupCronRun on workers prevents double-execution
 on:
   schedule:
-    - cron: '*/30 * * * *'  # spot strategies + cross-dex (sharded)
-    - cron: '0 * * * *'     # hourly: pool discovery + analytics
-    - cron: '*/15 * * * *'  # execute pending opportunities
-    - cron: '*/20 * * * *'  # scan + execute (cross-dex)
-    - cron: '0 2 * * *'     # daily cleanup (2 AM UTC)
+    - cron: '*/30 * * * *'  # 48/day = 1440/mo. Covers spot + cross-dex shards + execute + scan-execute every 30m; hourly+cleanup conditional
   workflow_dispatch: {}
+
+concurrency:
+  group: bot-crons
+  cancel-in-progress: false
 
 jobs:
   cron:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Spot Strategies (*/30)
-        if: github.event.schedule == '*/30 * * * *'
+      - name: Spot Strategies
         run: |
-          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/spot-strategies \
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Spot strategies"
+          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/spot-strategies \
             -H "Content-Type: application/json" \
-            --max-time 60
+            --max-time 60 --retry 1 --retry-delay 5
+          echo "spot: $?"
 
-      - name: Cross-DEX Shard 1/3 (*/30)
-        if: github.event.schedule == '*/30 * * * *'
+      - name: Cross-DEX Shards 1-3
         run: |
-          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cross-DEX shards"
+          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
             -d '{"shard": 1, "totalShards": 3}' \
-            --max-time 120
-
-      - name: Cross-DEX Shard 2/3 (*/30)
-        if: github.event.schedule == '*/30 * * * *'
-        run: |
+            --max-time 120 --retry 1 --retry-delay 5
+          echo "shard 1 done"
           sleep 5
-          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
+          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
             -d '{"shard": 2, "totalShards": 3}' \
-            --max-time 120
-
-      - name: Cross-DEX Shard 3/3 (*/30)
-        if: github.event.schedule == '*/30 * * * *'
-        run: |
-          sleep 10
-          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
+            --max-time 120 --retry 1 --retry-delay 5
+          echo "shard 2 done"
+          sleep 5
+          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
             -d '{"shard": 3, "totalShards": 3}' \
-            --max-time 120
+            --max-time 120 --retry 1 --retry-delay 5
+          echo "shard 3 done"
 
-      - name: Hourly Discovery (0 * * * *)
-        if: github.event.schedule == '0 * * * *'
+      - name: Execute Pending
         run: |
-          curl -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/hourly-discovery \
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Execute pending"
+          curl --fail --show-error -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/execute \
             -H "Content-Type: application/json" \
-            --max-time 180
+            --max-time 120 --retry 1 --retry-delay 5
 
-      - name: Execute Pending (*/15)
-        if: github.event.schedule == '*/15 * * * *'
+      - name: Scan & Execute
         run: |
-          curl -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/execute \
-            -H "Content-Type: application/json" \
-            --max-time 120
-
-      - name: Scan & Execute (*/20)
-        if: github.event.schedule == '*/20 * * * *'
-        run: |
-          curl -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/scan-and-execute \
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Scan & execute"
+          curl --fail --show-error -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/scan-and-execute \
             -H "Content-Type: application/json" \
             -d '{"chainId": 137}' \
-            --max-time 120
+            --max-time 120 --retry 1 --retry-delay 5
 
-      - name: Analytics Hourly (0 * * * *)
-        if: github.event.schedule == '0 * * * *'
+      # Hourly tasks only at :00 to avoid extra 24 runs/day (hourly was 720/mo)
+      - name: Hourly Discovery + Analytics (only at :00)
         run: |
-          curl -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/analytics \
+          MIN=$(date -u +%M)
+          echo "UTC minute=$MIN"
+          if [ "$MIN" != "00" ]; then
+            echo "Skip hourly (not top of hour)"
+            exit 0
+          fi
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Hourly discovery"
+          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/hourly-discovery \
             -H "Content-Type: application/json" \
-            --max-time 180
+            --max-time 180 --retry 1 --retry-delay 5
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Analytics hourly"
+          curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/analytics \
+            -H "Content-Type: application/json" \
+            --max-time 180 --retry 1 --retry-delay 5
 
-      - name: Daily Cleanup (0 2 * * *)
-        if: github.event.schedule == '0 2 * * *'
+      # Daily cleanup only at 02:00 UTC (was extra 30/mo)
+      - name: Daily Cleanup (only at 02:00 UTC)
         run: |
-          curl -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/cleanup \
+          HOUR=$(date -u +%H)
+          MIN=$(date -u +%M)
+          echo "UTC $HOUR:$MIN"
+          if [ "$HOUR" != "02" ] || [ "$MIN" != "00" ]; then
+            echo "Skip cleanup (not 02:00 UTC)"
+            exit 0
+          fi
+          set -e
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Daily cleanup"
+          curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/cleanup \
             -H "Content-Type: application/json" \
             -d '{"oppDays": 30, "tradeDays": 90, "pnlDays": 180}' \
-            --max-time 60
+            --max-time 60 --retry 1 --retry-delay 5

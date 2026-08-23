@@ -14,3 +14,9 @@ AUDIT_REPORT.md
 log.md
 src/
 dist/
+
+# secrets / local cf cache (added for public safety)
+.wrangler/
+.dev.vars
+worker/*/.dev.vars
+hardhat/.env

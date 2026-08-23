@@ -1,4 +1,4 @@
-const WORKER_URL = 'https://funbo.nobtx-io.workers.dev';
+const WORKER_URL = 'https://YOUR_WORKER_NAME.YOUR_SUBDOMAIN.workers.dev';
 
 export default {
   async fetch(request: Request, env: Record<string, string>, ctx: ExecutionContext) {

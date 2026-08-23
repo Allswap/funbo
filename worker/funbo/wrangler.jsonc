@@ -2,18 +2,18 @@
   "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
   "name": "funbo",
   "main": "src/index.ts",
-  "account_id": "0d8163bbd0d07b80a110280d8e60bcbf",
+  "account_id": "YOUR_CLOUDFLARE_ACCOUNT_ID",
   "compatibility_date": "2026-06-04",
   "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
     {
       "binding": "funbo-db",
       "database_name": "funbo-db",
-      "database_id": "35c17ec6-46fd-41e5-8e70-f829b4b77909"
+      "database_id": "YOUR_D1_DATABASE_ID"
     }
   ],
   "kv_namespaces": [
-    { "binding": "FUNBO_KV", "id": "e4cac40301d442f992aca506ba69a945" }
+    { "binding": "FUNBO_KV", "id": "YOUR_KV_NAMESPACE_ID" }
   ],
   "r2_buckets": [
     { "binding": "FUNBO_R2", "bucket_name": "funbo-execution-data" }
@@ -43,7 +43,7 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
-    "EXECUTION_WORKER_URL": "https://funbo-execution.nobtx-io.workers.dev",
-    "DISCOVERY_WORKER_URL": "https://funbo-discovery.nobtx-io.workers.dev"
+    "EXECUTION_WORKER_URL": "https://YOUR_WORKER_NAME.YOUR_SUBDOMAIN.workers.dev",
+    "DISCOVERY_WORKER_URL": "https://YOUR_WORKER_NAME.YOUR_SUBDOMAIN.workers.dev"
   }
 }
