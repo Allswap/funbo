@@ -8,11 +8,11 @@
     {
       "binding": "funbo-db",
       "database_name": "funbo-db",
-      "database_id": "YOUR_D1_DATABASE_ID"
+      "database_id": "35c17ec6-46fd-41e5-8e70-f829b4b77909"
     }
   ],
   "kv_namespaces": [
-    { "binding": "FUNBO_KV", "id": "YOUR_KV_NAMESPACE_ID" }
+    { "binding": "FUNBO_KV", "id": "297b9822c7eb4586be8ca1d52436bf0e" }
   ],
   "queues": {
     "producers": [
