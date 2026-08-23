@@ -816,7 +816,7 @@ async function executeSwap(
   return tx;
 }
 
-// Kyber aggregator execution for BRT (reliable, handles fee simulation)
+// Multi-aggregator execution for BRT (Kyber -> 0x -> ParaSwap -> Odos -> OpenOcean, skip 1inch)
 async function executeKyberSwap(
   provider: ethers.Provider,
   wallet: ethers.Wallet,
@@ -827,8 +827,19 @@ async function executeKyberSwap(
   tokenInDecimals: number = 18
 ): Promise<ethers.TransactionResponse> {
   const amountInWei = ethers.parseUnits(amountIn, tokenInDecimals);
+  const { buildBestAggregatorSwap } = await import('../../shared/aggregator');
+  const best = await buildBestAggregatorSwap(tokenIn, tokenOut, amountInWei, wallet.address, slippagePct, (provider as any)._env || {});
+  if (best) {
+    const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
+    const ok = await ensureAllowance(tokenContract, wallet.address, best.router, amountInWei);
+    if (!ok) throw new Error(`${best.source} allowance failed`);
+    const tx = await wallet.sendTransaction({ to: best.router, data: best.data, gasLimit: 650000, maxPriorityFeePerGas: ethers.parseUnits('35','gwei'), maxFeePerGas: ethers.parseUnits('90','gwei') });
+    console.log(`[aggregator] BRT via ${best.source} router ${best.router.slice(0,10)}`);
+    return tx as ethers.TransactionResponse;
+  }
+  // Fallback: Kyber direct encode
   const kyberData = await buildKyberSwapData(tokenIn, tokenOut, amountInWei, slippagePct, wallet.address);
-  if (!kyberData) throw new Error('Kyber encode failed for BRT');
+  if (!kyberData) throw new Error('All aggregators encode failed for BRT (Kyber/0x/ParaSwap)');
   const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
   const ok = await ensureAllowance(tokenContract, wallet.address, kyberData.router, amountInWei);
   if (!ok) throw new Error('Kyber allowance failed');
