@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { goplusScanTokenSafety, BlockscoutClient, isWellKnownTokenWithConfig } from './api-providers';
 import { getWorkingProvider } from './rpc-pool';
+import { isFeeToken, getKyberQuote, buildKyberSwapData, KYBER_ROUTER } from '../../shared/aggregator';
 
 export async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
   try {
@@ -790,6 +791,19 @@ async function executeSwap(
   const router = new ethers.Contract(routerAddress, V2_ROUTER_ABI, wallet);
   const deadline = Math.floor(Date.now() / 1000) + 600;
 
+  const isFee = isFeeToken(tokenA) || isFeeToken(tokenB);
+  if (isFee) {
+    // BRT 8% fee: must use SupportingFeeOnTransferTokens, amountOutMin is enforced on received amount
+    const tx = await (router as any).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+      amountInWei,
+      amountOutMin,
+      [tokenA, tokenB],
+      wallet.address,
+      deadline,
+      { gasLimit: 600000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }
+    ) as ethers.TransactionResponse;
+    return tx;
+  }
   const tx = await router.swapExactTokensForTokens(
     amountInWei,
     amountOutMin,
@@ -800,6 +814,26 @@ async function executeSwap(
   ) as ethers.TransactionResponse;
 
   return tx;
+}
+
+// Kyber aggregator execution for BRT (reliable, handles fee simulation)
+async function executeKyberSwap(
+  provider: ethers.Provider,
+  wallet: ethers.Wallet,
+  tokenIn: string,
+  tokenOut: string,
+  amountIn: string,
+  slippagePct: number,
+  tokenInDecimals: number = 18
+): Promise<ethers.TransactionResponse> {
+  const amountInWei = ethers.parseUnits(amountIn, tokenInDecimals);
+  const kyberData = await buildKyberSwapData(tokenIn, tokenOut, amountInWei, slippagePct, wallet.address);
+  if (!kyberData) throw new Error('Kyber encode failed for BRT');
+  const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
+  const ok = await ensureAllowance(tokenContract, wallet.address, kyberData.router, amountInWei);
+  if (!ok) throw new Error('Kyber allowance failed');
+  const tx = await wallet.sendTransaction({ to: kyberData.router, data: kyberData.data, gasLimit: 600000, maxPriorityFeePerGas: ethers.parseUnits('35','gwei'), maxFeePerGas: ethers.parseUnits('90','gwei') });
+  return tx as ethers.TransactionResponse;
 }
 
 async function executeSwapV3(
@@ -2366,16 +2400,26 @@ export async function executeMMRebalance(
   const slippageResult = await calculateOptimalSlippage(provider, router.address, ethers.parseEther(tradeAmount), tokenIn, tokenOut, minSlippagePct);
   if (!slippageResult) return { success: false, strategy: 'mm_rebalance', tokenA: tokenIn, tokenB: tokenOut, amountIn: tradeAmount, amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'Slippage calc failed' };
 
+  // BRT fee-token: use Kyber aggregator only (reliable, handles 8% fee), isolated wallet per mode
+  const isBRT = isFeeToken(tokenIn) || isFeeToken(tokenOut);
+  const brtDecimals = isBRT ? await getTokenDecimals(provider, tokenIn, network.chain_id) : 18;
+  // Override slippage floor for BRT 8% fee if not excluded
+  let effectiveSlippage = slippageResult.optimal;
+  if (isBRT) effectiveSlippage = Math.max(slippageResult.optimal, 8.5);
   let txHash: string | null = null;
   try {
-    if (version === 'v3') {
+    if (isBRT) {
+      const kyberResp = await executeKyberSwap(provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, brtDecimals);
+      txHash = kyberResp.hash;
+      await waitTx(kyberResp, 1, 30000);
+    } else if (version === 'v3') {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
-      const swapResp = await executeSwapV3(env, provider, wallet, tokenIn, tokenOut, tradeAmount, slippageResult.optimal, router.address, quoterAddr, defaultFeeTier);
+      const swapResp = await executeSwapV3(env, provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, router.address, quoterAddr, defaultFeeTier);
       txHash = swapResp.hash;
       await waitTx(swapResp, 1, 30000);
     } else {
-      const swapResp = await executeSwap(env, provider, wallet, tokenIn, tokenOut, tradeAmount, slippageResult.optimal, router.address, network.chain_id);
+      const swapResp = await executeSwap(env, provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, router.address, network.chain_id);
       txHash = swapResp.hash;
       await waitTx(swapResp, 1, 30000);
     }

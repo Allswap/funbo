@@ -329,7 +329,10 @@ async function executePendingOpportunities(env: Env): Promise<any> {
       }
 
       if (opp.router_b === 'mm_rebalance') {
-        const result = await executeMMRebalance(env, net, opp, wallets.results[0].address, DB, defaultFeeTier);
+        // Isolated MM wallets: prefer strategy_type mm_brt_* else fallback
+        const mmWallets = wallets.results.filter((w:any)=> (w.strategy_type||'').startsWith('mm'));
+        const mmWallet = mmWallets.length ? mmWallets[0] : wallets.results[0];
+        const result = await executeMMRebalance(env, net, mmWallet.address, DB, defaultFeeTier);
         await DB.prepare('UPDATE opportunities SET status = ?, error_msg = ?, executed_at = CURRENT_TIMESTAMP WHERE id = ?').bind(result.status === 'success' ? 'executed' : 'skipped', result.errorMsg || null, opp.id).run();
         return result.status === 'success';
       }

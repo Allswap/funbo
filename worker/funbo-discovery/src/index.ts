@@ -6,6 +6,7 @@ import { getSwapQuote, getPactSwapTokenType, STABLECOIN_SYMBOLS, PACT_SWAP_CHAIN
 import { analyzeDiscoveredPairs } from './ai-discovery';
 import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { isFeeToken, getKyberQuote } from '../../shared/aggregator';
 
 async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
   try {
@@ -644,20 +645,52 @@ async function scanMMStrategies(DB: any, networks: any[], env: any): Promise<voi
       for (const pairRow of pairRows.results) {
         const pairToken = pairRow.partner;
         
-        // Find best price across all valid routers
+        // Find best price: BRT fee-token uses Kyber aggregator only (direct V2 reverts)
         let bestQuote: bigint | null = null;
         let bestRouter = null;
-        for (const router of validRouters) {
-          const quote = await rawQuoteRoute(rpcUrl, cfg.token_address, pairToken, router, 3000, env);
-          if (quote && quote > 0n && (bestQuote === null || quote > bestQuote)) {
-            bestQuote = quote;
-            bestRouter = router;
+        const isBRT = isFeeToken(cfg.token_address) || isFeeToken(pairToken);
+        if (isBRT) {
+          // Kyber quote with correct decimals (BRT 9d vs WPOL 18d)
+          const brtDecimals = await getTokenDecimals(rpcUrl, cfg.token_address, cfg.chain_id, env);
+          const pairDecimals = await getTokenDecimals(rpcUrl, pairToken, cfg.chain_id, env);
+          // Use trade_amount as base for price calc (e.g., 25 BRT)
+          const baseAmt = ethers.parseUnits(cfg.trade_amount || '25', brtDecimals);
+          const kyber = await getKyberQuote(cfg.token_address, pairToken, baseAmt, cfg.chain_id);
+          if (kyber && kyber.amountOut > 0n) {
+            bestQuote = kyber.amountOut;
+            // Convert to per-unit price: amountOut/pairDecimals / (baseAmt/brtDecimals)
+            const outPerUnit = Number(ethers.formatUnits(kyber.amountOut, pairDecimals)) / Number(ethers.formatUnits(baseAmt, brtDecimals));
+            // Keep bestQuote as raw for deviation calc consistency
+            bestRouter = { address: kyber.routerAddress, version: 'aggregator' } as any;
+            // Store price as per-unit for ref
+            // Override currentPrice calc below
           }
-          await new Promise(r => setTimeout(r, 50));
+          if (!bestQuote) continue;
+        } else {
+          for (const router of validRouters) {
+            const quote = await rawQuoteRoute(rpcUrl, cfg.token_address, pairToken, router, 3000, env);
+            if (quote && quote > 0n && (bestQuote === null || quote > bestQuote)) {
+              bestQuote = quote;
+              bestRouter = router;
+            }
+            await new Promise(r => setTimeout(r, 50));
+          }
+          if (!bestQuote || bestQuote === 0n) continue;
         }
-        if (!bestQuote || bestQuote === 0n) continue;
 
-        const currentPrice = Number(ethers.formatEther(bestQuote));
+        // Fix decimals bug: formatEther assumes 18d, BRT is 9d. Use tokenOut decimals.
+        let currentPrice: number;
+        if (isBRT) {
+          const pairDecimals = await getTokenDecimals(rpcUrl, pairToken, cfg.chain_id, env);
+          const brtDecimals = await getTokenDecimals(rpcUrl, cfg.token_address, cfg.chain_id, env);
+          const baseAmt = ethers.parseUnits(cfg.trade_amount || '25', brtDecimals);
+          // bestQuote is amountOut for baseAmt, convert to price per 1 BRT
+          currentPrice = Number(ethers.formatUnits(bestQuote, pairDecimals)) / Number(ethers.formatUnits(baseAmt, brtDecimals));
+        } else {
+          // For non-fee tokens, DEFAULT_AMOUNT_IN 0.1e18 was used; approximate price
+          // Use quoted amountOut / 0.1
+          currentPrice = Number(ethers.formatEther(bestQuote)) / 0.1;
+        }
 
         if (!cfg.reference_price) {
           await DB.prepare('UPDATE mm_lp_configs SET reference_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(String(currentPrice), cfg.id).run();
@@ -922,8 +955,29 @@ async function updateLastScan(DB: any, key: string) {
     .bind(key, new Date().toISOString(), new Date().toISOString()).run();
 }
 
+async function getBRTMode(DB: any): Promise<'low'|'med'|'high'> {
+  const row = await DB.prepare("SELECT value FROM config WHERE key='mm_brt_mode'").first() as any;
+  const mode = row?.value;
+  if (mode === 'low' || mode === 'med' || mode === 'high') return mode;
+  // auto: pick by deviation/volatility (deviation stored in last opportunities)
+  const last = await DB.prepare("SELECT profit_pct FROM opportunities WHERE token_a='0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b' ORDER BY created_at DESC LIMIT 5").all() as any;
+  const avgDev = last.results?.length ? last.results.reduce((s:number,r:any)=>s+Math.abs(r.profit_pct||0),0)/last.results.length : 0;
+  if (avgDev > 8) return 'high';
+  if (avgDev > 4) return 'med';
+  return 'low';
+}
+
 async function runSpotStrategiesScan(DB: any, polygon: any[], env: any) {
   try {
+    // AI auto mode for BRT: activate only the selected mm_lp_configs row, others paused
+    const brtMode = await getBRTMode(DB);
+    const modeMap: Record<string,string> = { low: 'BRT-low', med: 'BRT-med', high: 'BRT-high' };
+    const activeLabel = modeMap[brtMode];
+    if (activeLabel) {
+      await DB.prepare("UPDATE mm_lp_configs SET is_active=0 WHERE token_address='0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b'").run();
+      await DB.prepare("UPDATE mm_lp_configs SET is_active=1 WHERE token_address='0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b' AND label=?").bind(activeLabel).run();
+      console.log(`[mm-ai] BRT mode ${brtMode} active ${activeLabel}`);
+    }
     await scanSoloSpotStrategies(DB, polygon, env);
     await scanSpotStrategies(DB, polygon, env);
     await scanMMStrategies(DB, polygon, env);
