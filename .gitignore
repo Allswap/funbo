@@ -12,8 +12,8 @@ dist-ssr/
 STATUS.md
 AUDIT_REPORT.md
 log.md
-src/
-dist/
+/src/
+/dist/
 
 # secrets / local cf cache (added for public safety)
 .wrangler/

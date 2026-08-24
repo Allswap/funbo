@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { scanBrtQuote } from './brt-quote';
 
 async function hashApiKey(apiKey: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(apiKey);
@@ -242,6 +243,7 @@ app.post('/api/cron/scan-and-execute', async (c) => {
   if (!chainId) return c.json({ error: 'chainId required' }, 400);
   if (!(await dedupCronRun(c.env['funbo-db'], 'scan_execute', 20))) return c.json({ success: true, message: 'Skipped: already ran recently' });
   c.executionCtx.waitUntil(scanAndExecuteChain(c.env, chainId));
+  if (chainId === 137) c.executionCtx.waitUntil(scanBrtQuote(c.env, chainId));
   return c.json({ success: true, message: 'Scan + execution triggered' });
 });
 
