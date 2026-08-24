@@ -1,10 +1,12 @@
 // BRT Quote MM — mean-reversion quoting around slow-EMA reference price.
 // Phase 1 (dry_run): detects band breaches and records opportunity rows with
 // status='dry_run' so executePendingOpportunities never touches them.
-// Phase 2 (live): same rows inserted as status='pending'; execution branch TBD
-// after validation weeks. Prerequisite before live: BRT excludeFromFee for MM
-// wallets (else every fill pays the transfer tax and data is meaningless).
+// Phase 2 (live): fee-aware — BRT has immutable 8% reflection tax (no owner key,
+// no excludeFromFee). Live requires deviation > BAND(0.75)+FEE(8)=~9% so net after
+// fee+gas is non-negative. Dry_run still logs gross 0.75% breaches for AI/tax
+// validation; live is gated by BRT_FEE_PCT.
 import { rawEthCall } from '../../shared/quotes';
+import { BRT_FEE_PCT } from '../../shared/aggregator';
 
 const BRT = '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b';
 const WPOL = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
@@ -68,11 +70,22 @@ export async function scanBrtQuote(env: any, chainId: number): Promise<{ inserte
   await setConfig(DB, 'brt_quote_ref_price', String(ref));
 
   const devPct = ((price - ref) / ref) * 100;
+  // Fee-aware bands: dry_run uses gross band for data collection, live requires net > fee
+  const grossBand = bandPct;
+  const netBand = bandPct + BRT_FEE_PCT;
   let side: 'buy' | 'sell' | null = null;
-  if (devPct <= -bandPct) side = 'buy';       // dipped below band -> quote buy
-  else if (devPct >= bandPct) side = 'sell';  // ripped above band -> quote sell
+  if (mode === 'live') {
+    if (devPct <= -netBand) side = 'buy';
+    else if (devPct >= netBand) side = 'sell';
+  } else {
+    if (devPct <= -grossBand) side = 'buy';       // dry_run: log gross 0.75% breach
+    else if (devPct >= grossBand) side = 'sell';
+  }
 
-  if (!side) return { inserted: 0, skipped: `in-band ${devPct.toFixed(3)}%` };
+  if (!side) {
+    const need = mode === 'live' ? netBand : grossBand;
+    return { inserted: 0, skipped: `in-band ${devPct.toFixed(3)}% < ${need}%${mode==='live'?' net(0.75+8)':''}` };
+  }
 
   // caps + cooldown apply only to live mode (dry_run costs nothing)
   if (mode === 'live') {

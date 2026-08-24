@@ -6,7 +6,7 @@ import { getSwapQuote, getPactSwapTokenType, STABLECOIN_SYMBOLS, PACT_SWAP_CHAIN
 import { analyzeDiscoveredPairs } from './ai-discovery';
 import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
-import { isFeeToken, getKyberQuote } from '../../shared/aggregator';
+import { isFeeToken, getKyberQuote, BRT_FEE_PCT } from '../../shared/aggregator';
 
 async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
   try {
@@ -701,7 +701,10 @@ async function scanMMStrategies(DB: any, networks: any[], env: any): Promise<voi
         if (refPrice <= 0) { await DB.prepare('UPDATE mm_lp_configs SET reference_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(String(currentPrice), cfg.id).run(); continue; }
 
         const deviation = Math.abs(currentPrice - refPrice) / refPrice * 100;
-        if (deviation < cfg.rebalance_threshold_pct) continue;
+        // BRT fee workaround (no owner key, 8% tax immutable): require net deviation > fee + threshold
+        const isBRT2 = isFeeToken(cfg.token_address) || isFeeToken(pairToken);
+        const effectiveThreshold = isBRT2 ? cfg.rebalance_threshold_pct + BRT_FEE_PCT : cfg.rebalance_threshold_pct;
+        if (deviation < effectiveThreshold) continue;
 
         // Check for existing opportunity for THIS pair
         const existing = await DB.prepare('SELECT id FROM opportunities WHERE token_a = ? AND token_b = ? AND router_b = "mm_rebalance" AND status = "pending"').bind(cfg.token_address, pairToken).first();

@@ -12,6 +12,7 @@ export const WPOL_ADDRESS = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'.toLower
 export const KYBER_ROUTER = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5'.toLowerCase();
 export const KYBER_API = 'https://aggregator-api.kyberswap.com/polygon/api/v1/routes';
 export const FEE_TOKENS = new Set([BRT_ADDRESS]);
+export const BRT_FEE_PCT = 8; // 2+2+3+1 reflection tax, immutable w/o owner excludeFromFee
 
 export function isFeeToken(addr: string): boolean {
   return FEE_TOKENS.has(addr.toLowerCase());

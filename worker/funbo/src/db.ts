@@ -64,6 +64,10 @@ const MIGRATIONS = [
       ('brt_quote_cooldown_minutes', '45'),
       ('brt_quote_ref_price', '');
   ` },
+  { id: '035_brt_fee_workaround', sql: `
+    INSERT OR IGNORE INTO config (key, value) VALUES ('brt_fee_pct', '8');
+    INSERT OR IGNORE INTO config (key, value) VALUES ('brt_quote_note', 'no-owner: live requires band+fee ~9%, dry_run logs gross 0.75%');
+  ` },
 ];
 
 const TABLE_SCHEMAS = [
