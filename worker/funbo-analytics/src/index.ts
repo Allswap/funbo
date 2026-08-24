@@ -26,7 +26,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return c.newResponse(null, { status: 204 });
 
   const path = c.req.path.replace(/\/+/g, '/');
-  const publicPaths = ['/api/health', '/api/cron/analytics', '/api/cron/cleanup'];
+  const publicPaths = ['/api/health'];
   if (publicPaths.includes(path)) { await initDB(c.env); return next(); }
 
   const apiKey = c.req.header('X-API-Key');

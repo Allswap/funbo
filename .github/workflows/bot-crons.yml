@@ -23,6 +23,7 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Spot strategies"
           curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/spot-strategies \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             --max-time 60 --retry 1 --retry-delay 5
           echo "spot: $?"
 
@@ -32,18 +33,21 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cross-DEX shards"
           curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             -d '{"shard": 1, "totalShards": 3}' \
             --max-time 120 --retry 1 --retry-delay 5
           echo "shard 1 done"
           sleep 5
           curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             -d '{"shard": 2, "totalShards": 3}' \
             --max-time 120 --retry 1 --retry-delay 5
           echo "shard 2 done"
           sleep 5
           curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/cross-dex \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             -d '{"shard": 3, "totalShards": 3}' \
             --max-time 120 --retry 1 --retry-delay 5
           echo "shard 3 done"
@@ -54,6 +58,7 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Execute pending"
           curl --fail --show-error -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/execute \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             --max-time 120 --retry 1 --retry-delay 5
 
       - name: Scan & Execute
@@ -62,6 +67,7 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Scan & execute"
           curl --fail --show-error -X POST https://funbo-execution.nobtx-io.workers.dev/api/cron/scan-and-execute \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             -d '{"chainId": 137}' \
             --max-time 120 --retry 1 --retry-delay 5
 
@@ -78,10 +84,12 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Hourly discovery"
           curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/hourly-discovery \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             --max-time 180 --retry 1 --retry-delay 5
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Analytics hourly"
           curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/analytics \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             --max-time 180 --retry 1 --retry-delay 5
 
       # Daily cleanup only at 02:00 UTC (was extra 30/mo)
@@ -98,5 +106,6 @@ jobs:
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Daily cleanup"
           curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/cleanup \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
             -d '{"oppDays": 30, "tradeDays": 90, "pnlDays": 180}' \
             --max-time 60 --retry 1 --retry-delay 5

@@ -54,6 +54,7 @@ const MIGRATIONS = [
     INSERT OR IGNORE INTO config (key, value) VALUES ('mm_brt_mode', 'auto');
     INSERT OR IGNORE INTO token_pairs (chain_id, token_a, token_b, label) VALUES (137, '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b', '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', 'BRT/WPOL');
   ` },
+  { id: '033_seed_cron_api_key', sql: `INSERT OR IGNORE INTO api_keys (key_hash, name, permissions, is_active) VALUES ('d2905a0d371561910374f184ef54f3d8462c78d46a5e7fa70d3a615f60e35f66', 'gh-actions-cron', 'read,write', 1);` },
 ];
 
 const TABLE_SCHEMAS = [
