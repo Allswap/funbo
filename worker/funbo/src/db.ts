@@ -68,6 +68,7 @@ const MIGRATIONS = [
     INSERT OR IGNORE INTO config (key, value) VALUES ('brt_fee_pct', '8');
     INSERT OR IGNORE INTO config (key, value) VALUES ('brt_quote_note', 'no-owner: live requires band+fee ~9%, dry_run logs gross 0.75%');
   ` },
+  { id: '036_enable_brt_live', sql: `UPDATE config SET value = 'live' WHERE key = 'brt_quote_mode';` },
 ];
 
 const TABLE_SCHEMAS = [
