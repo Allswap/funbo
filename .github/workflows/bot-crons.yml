@@ -1,8 +1,9 @@
 name: Bot Crons
-# CONSOLIDATED for private repo limit: 2000 min/mo
-# Before: 5 schedules = 241 runs/day = 7230 min/mo (3.6x over limit) -> blocked
-# After:  1 schedule  =  48 runs/day = 1440 min/mo (72% within limit, leaves 560 for deploys)
-# Keep hourly/daily via in-job UTC time checks; dedupCronRun on workers prevents double-execution
+# Multi-scheduler (see /media/joop/J/gh-org/funbo-crons-compare.md & bstone-STATUS.md §4,7,11)
+# GH Actions (*/30 = 48 runs/day ≈1440 min/mo <2000): spot + cross-dex shards + scan-and-execute (+ execute 30m fallback) — GH is fallback now
+# cron-job.org (FREE, outside GH): spot 15m (96/d) + cross-dex 15m (96×3 shards) + execute 5m (288/d) + hourly @:00 + daily @02:00
+# GH */15 would be 96/d=2880 OVER → cron-job.org handles fast cadence free. GH stays 30m as safety.
+# Before: 5 schedules 241/d=7230 OVER → 1 schedule 48/d consolidated. Now split with external 15m/5m.
 on:
   schedule:
     - cron: '*/30 * * * *'  # 48/day = 1440/mo. Covers spot + cross-dex shards + execute + scan-execute every 30m; hourly+cleanup conditional
@@ -71,41 +72,10 @@ jobs:
             -d '{"chainId": 137}' \
             --max-time 120 --retry 1 --retry-delay 5
 
-      # Hourly tasks only at :00 to avoid extra 24 runs/day (hourly was 720/mo)
-      - name: Hourly Discovery + Analytics (only at :00)
-        run: |
-          MIN=$(date -u +%M)
-          echo "UTC minute=$MIN"
-          if [ "$MIN" != "00" ]; then
-            echo "Skip hourly (not top of hour)"
-            exit 0
-          fi
-          set -e
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Hourly discovery"
-          curl --fail --show-error -X POST https://funbo-discovery.nobtx-io.workers.dev/api/cron/hourly-discovery \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
-            --max-time 180 --retry 1 --retry-delay 5
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Analytics hourly"
-          curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/analytics \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
-            --max-time 180 --retry 1 --retry-delay 5
-
-      # Daily cleanup only at 02:00 UTC (was extra 30/mo)
-      - name: Daily Cleanup (only at 02:00 UTC)
-        run: |
-          HOUR=$(date -u +%H)
-          MIN=$(date -u +%M)
-          echo "UTC $HOUR:$MIN"
-          if [ "$HOUR" != "02" ] || [ "$MIN" != "00" ]; then
-            echo "Skip cleanup (not 02:00 UTC)"
-            exit 0
-          fi
-          set -e
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Daily cleanup"
-          curl --fail --show-error -X POST https://funbo-analytics.nobtx-io.workers.dev/api/cron/cleanup \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${{ secrets.CRON_API_KEY }}" \
-            -d '{"oppDays": 30, "tradeDays": 90, "pnlDays": 180}' \
-            --max-time 60 --retry 1 --retry-delay 5
+            # NOTE: Hourly + Daily + spot 15m/cross-dex 15m + execute 5m moved to cron-job.org (see /media/joop/J/gh-org/funbo-crons-compare.md & bstone-STATUS.md §7).
+      # GH Actions now only does 30m core scans as fallback (spot + cross-dex + scan-and-execute). Externals handle fast cadence FREE.
+      # If cron-job.org is down, re-enable below 2 jobs (uncomment) — still within GH limit when conditional @:00/@02:00.
+      # cron-job.org jobs:
+      # - spot 15m: */15 * * * * → POST https://funbo-discovery.../api/cron/spot-strategies (X-API-Key, 60s, dedup 10m)
+      # - cross-dex 15m: */15 * * * * → POST .../cross-dex {"shard":1-3,"totalShards":3} ×3 (X-API-Key, 120s, dedup 15m per shard)
+      # - execute 5m: */5 * * * * → POST .../execute (no dedup) + hourly 0 * * * * → hourly-discovery+analytics + daily 0 2 * * * → cleanup
