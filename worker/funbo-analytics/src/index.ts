@@ -246,22 +246,26 @@ app.post('/api/cron/cleanup', async (c) => {
   ).bind(soloTradeDays).run();
 
   const deletedMmConfigs = await DB.prepare(
-    `DELETE FROM mm_lp_configs 
+    `DELETE FROM mm_lp_configs
      WHERE is_active = 0 AND updated_at < date('now', '-' || ? || ' days')`
   ).bind(mmConfigDays).run();
 
-  console.log(`[cleanup] deleted: opps=${deletedOpps.changes}, trades=${deletedTrades.changes}, pnl=${deletedPnl.changes}, positions=${deletedPositions.changes}, soloTrades=${deletedSoloTrades.changes}, mmConfigs=${deletedMmConfigs.changes}`);
+  // workers-types v5: row count moved from D1Result.changes → D1Result.meta.changes
+  const changesOf = (r: any): number => r?.meta?.changes ?? r?.changes ?? 0;
+  const cleanupCounts = {
+    opportunities: changesOf(deletedOpps),
+    transactions: changesOf(deletedTrades),
+    pnl: changesOf(deletedPnl),
+    positions: changesOf(deletedPositions),
+    soloTrades: changesOf(deletedSoloTrades),
+    mmConfigs: changesOf(deletedMmConfigs),
+  };
 
-  return c.json({ 
-    success: true, 
-    deleted: { 
-      opportunities: deletedOpps.changes, 
-      transactions: deletedTrades.changes, 
-      pnl: deletedPnl.changes,
-      positions: deletedPositions.changes,
-      soloTrades: deletedSoloTrades.changes,
-      mmConfigs: deletedMmConfigs.changes
-    }
+  console.log(`[cleanup] deleted: opps=${cleanupCounts.opportunities}, trades=${cleanupCounts.transactions}, pnl=${cleanupCounts.pnl}, positions=${cleanupCounts.positions}, soloTrades=${cleanupCounts.soloTrades}, mmConfigs=${cleanupCounts.mmConfigs}`);
+
+  return c.json({
+    success: true,
+    deleted: cleanupCounts
   });
 });
 
