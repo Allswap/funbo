@@ -69,6 +69,23 @@ const MIGRATIONS = [
     INSERT OR IGNORE INTO config (key, value) VALUES ('brt_quote_note', 'no-owner: live requires band+fee ~9%, dry_run logs gross 0.75%');
   ` },
   { id: '036_enable_brt_live', sql: `UPDATE config SET value = 'live' WHERE key = 'brt_quote_mode';` },
+  {
+    id: '037_pol_focus_global_config',
+    sql: `
+      INSERT OR IGNORE INTO config (key, value) VALUES
+        ('main_token', '0x0000000000000000000000000000000000001010'),
+        ('wrapped_token', '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270'),
+        ('active_strategies', 'solo_spot,triangular'),
+        ('slippage_buffer_pct', '1.0'),
+        ('lp_fee_pct', '0.3'),
+        ('scan_cost_buffer_pct', '2.0'),
+        ('live_min_received', 'true'),
+        ('live_price_impact', 'true'),
+        ('live_lp_fee', 'true'),
+        ('live_gas_price', 'true'),
+        ('live_tx_cost', 'true');
+    `
+  },
 ];
 
 const TABLE_SCHEMAS = [

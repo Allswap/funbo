@@ -31,5 +31,9 @@
   },
   "triggers": {
     "crons": []
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "EXECUTION_WORKER_URL": "https://funbo-execution.nobtx-io.workers.dev"
   }
 }

@@ -67,42 +67,26 @@ export async function rawEthCall(rpcUrl: string, to: string, data: string, env?:
   } catch { return null; }
 }
 
-export async function rawQuoteRoute(rpcUrl: string, tokenA: string, tokenB: string, router: any, feeTier: number, env?: any): Promise<bigint | null> {
-  try {
-    const amountIn = DEFAULT_AMOUNT_IN;
-    const version = (router.version || 'v2').toLowerCase();
-    if (version === 'v3') {
-      const quoter = (router.quoter_address || '').trim();
-      let bestOut: bigint | null = null;
-      for (const ft of V3_FEE_TIERS) {
-        const path = encodeV3Path([tokenA, tokenB], [ft]);
-        const data = V3_QUOTE_EXACT_INPUT + abiEncodeBytesUint256(path, amountIn);
-        const result = await rawEthCall(rpcUrl, quoter, data, env);
-        if (result) {
-          try {
-            const amountOut = abiDecodeUint256(result);
-            if (amountOut > 0n && (bestOut === null || amountOut > bestOut)) bestOut = amountOut;
-          } catch {}
-        }
-      }
-      return bestOut;
-    }
-    const data = V2_GET_AMOUNTS_OUT + abiEncodeUint256AddressList(amountIn, [tokenA, tokenB]);
-    const result = await rawEthCall(rpcUrl, router.address, data, env);
-    if (!result) return null;
-    const decoded = abiDecodeUint256List(result);
-    return decoded[1];
-  } catch { return null; }
+export function rawQuoteRoute(rpcUrl: string, tokenA: string, tokenB: string, router: any, feeTier: number, env?: any): Promise<bigint | null> {
+  return rawQuoteRouteAmount(rpcUrl, tokenA, tokenB, router, feeTier, DEFAULT_AMOUNT_IN, env);
+}
+
+// Polyon native POL (0x1010) is not an ERC-20 path token — pools use wrapped WPOL.
+function pathToken(addr: string): string {
+  const a = addr.toLowerCase();
+  return a === '0x0000000000000000000000000000000000001010' ? '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' : a;
 }
 
 export async function rawQuoteRouteAmount(rpcUrl: string, tokenA: string, tokenB: string, router: any, feeTier: number, amountIn: bigint, env?: any): Promise<bigint | null> {
   try {
+    const tA = pathToken(tokenA);
+    const tB = pathToken(tokenB);
     const version = (router.version || 'v2').toLowerCase();
     if (version === 'v3') {
       const quoter = (router.quoter_address || '').trim();
       let bestOut: bigint | null = null;
       for (const ft of V3_FEE_TIERS) {
-        const path = encodeV3Path([tokenA, tokenB], [ft]);
+        const path = encodeV3Path([tA, tB], [ft]);
         const data = V3_QUOTE_EXACT_INPUT + abiEncodeBytesUint256(path, amountIn);
         const result = await rawEthCall(rpcUrl, quoter, data, env);
         if (result) {
@@ -114,7 +98,7 @@ export async function rawQuoteRouteAmount(rpcUrl: string, tokenA: string, tokenB
       }
       return bestOut;
     }
-    const data = V2_GET_AMOUNTS_OUT + abiEncodeUint256AddressList(amountIn, [tokenA, tokenB]);
+    const data = V2_GET_AMOUNTS_OUT + abiEncodeUint256AddressList(amountIn, [tA, tB]);
     const result = await rawEthCall(rpcUrl, router.address, data, env);
     if (!result) return null;
     const decoded = abiDecodeUint256List(result);

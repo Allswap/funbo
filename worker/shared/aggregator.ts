@@ -9,6 +9,14 @@
 
 export const BRT_ADDRESS = '0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b'.toLowerCase();
 export const WPOL_ADDRESS = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'.toLowerCase();
+export const POL_NATIVE = '0x0000000000000000000000000000000000001010'.toLowerCase();
+export const POL_WRAPPED = WPOL_ADDRESS;
+
+/** True when the address is the main chain token: native POL or its only wrapped form (WPOL). */
+export function isPolToken(addr: string): boolean {
+  const a = addr.toLowerCase();
+  return a === POL_NATIVE || a === POL_WRAPPED;
+}
 export const KYBER_ROUTER = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5'.toLowerCase();
 export const KYBER_API = 'https://aggregator-api.kyberswap.com/polygon/api/v1/routes';
 export const FEE_TOKENS = new Set([BRT_ADDRESS]);

@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { isPolToken, POL_NATIVE, POL_WRAPPED } from '../../shared/aggregator';
 import { scanBrtQuote } from './brt-quote';
 
 async function hashApiKey(apiKey: string): Promise<string> {
@@ -27,6 +28,23 @@ async function dedupCronRun(DB: any, key: string, intervalMin: number): Promise<
     await DB.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?`).bind(`last_cron:${key}`, String(now), String(now)).run();
     return true;
   } catch { return true; }
+}
+
+// --- Global strategy config gate (default: solo_spot,triangular only) ---
+async function getActiveStrategies(DB: any): Promise<string[]> {
+  const row = await DB.prepare("SELECT value FROM config WHERE key = 'active_strategies'").first() as { value?: string } | null;
+  const raw = row?.value;
+  if (!raw) return ['solo_spot', 'triangular'];
+  return raw.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+}
+function strategyEnabled(active: string[], key: string): boolean {
+  return active.includes(key.toLowerCase());
+}
+
+// Native POL is the main swap token; WPOL only when no native pool exists.
+function isPolLeg(addr: string): boolean {
+  const a = (addr || '').toLowerCase();
+  return a === POL_NATIVE || a === POL_WRAPPED;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -70,6 +88,11 @@ app.post('/api/cron/execute', async (c) => {
 const SCAN_VERSION = 'v5-verify-rpcs';
 async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserted: number; executed: number }> {
   const DB = env['funbo-db'];
+  // POL focus: only Polygon runs, and only strategies in active_strategies may fire (default solo_spot,triangular).
+  if (chainId !== 137) { console.log(`[scan:${SCAN_VERSION}] POL focus: only Polygon 137, skipping chain ${chainId}`); return { inserted: 0, executed: 0 }; }
+  const active = await getActiveStrategies(DB);
+  const allowCrossDex = strategyEnabled(active, 'cross_dex');
+  const allowTri = strategyEnabled(active, 'triangular');
   const network = await DB.prepare('SELECT * FROM networks WHERE is_active = 1 AND chain_id = ?').bind(chainId).first() as { rpc_url: string } | null;
   if (!network?.rpc_url) { console.log(`[scan:${SCAN_VERSION}] no network`); return { inserted: 0, executed: 0 }; }
   const minProfitRow = await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct"').first() as { value: string } | null;
@@ -111,14 +134,16 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
     const maxPairsPerRun = 20;
     const maxRouterPairsPerPair = 10;
   let inserted = 0;
-  if (routers.results.length >= 2 && pairs.results.length > 0) {
+  if (allowCrossDex && routers.results.length >= 2 && pairs.results.length > 0) {
     const validRouters = routers.results.filter((r: any) => r.address && r.version === 'v2');
     console.log(`[scan:${SCAN_VERSION}] validRouters=${validRouters.map((r: any) => `${r.name}(${r.version})`).join(', ')}`);
     const WMATIC_ADDR = '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
+    const NATIVE_POL_ADDR = '0x0000000000000000000000000000000000001010';
+    const polPriority = (addr: string) => (addr?.toLowerCase() === NATIVE_POL_ADDR ? 0 : addr?.toLowerCase() === WMATIC_ADDR ? 1 : 2);
     pairs.results.sort((a: any, b: any) => {
-      const aHasWmatic = a.token_a?.toLowerCase() === WMATIC_ADDR || a.token_b?.toLowerCase() === WMATIC_ADDR ? 1 : 0;
-      const bHasWmatic = b.token_a?.toLowerCase() === WMATIC_ADDR || b.token_b?.toLowerCase() === WMATIC_ADDR ? 1 : 0;
-      return bHasWmatic - aHasWmatic;
+      const aScore = Math.min(polPriority(a.token_a), polPriority(a.token_b));
+      const bScore = Math.min(polPriority(b.token_a), polPriority(b.token_b));
+      return aScore - bScore;
     });
     for (let pIdx = 0; pIdx < Math.min(pairs.results.length, maxPairsPerRun); pIdx++) {
       const pair = pairs.results[pIdx];
@@ -176,7 +201,7 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
   let triInserted = 0;
   const triMinProfitPct = parseFloat((await DB.prepare('SELECT value FROM config WHERE key = "min_profit_pct_triangular"').first() as any)?.value || '0.2');
   const v2Routers = routers.results.filter((r: any) => r.address && r.version === 'v2');
-  if (v2Routers.length >= 2 && pairs.results.length >= 3) {
+  if (allowTri && v2Routers.length >= 2 && pairs.results.length >= 3) {
     const adj = new Map<string, { token: string; pair: any }[]>();
     for (const p of pairs.results) {
       const a = p.token_a.toLowerCase();
@@ -193,6 +218,8 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
         if (!neighborsB) continue;
         for (const { token: tC } of neighborsB) {
           if (tC === tA || tC === tB) continue;
+          // POL focus: every triangle must include native POL or WPOL as one leg.
+          if (!isPolLeg(tA) && !isPolLeg(tB) && !isPolLeg(tC)) continue;
           const neighborsC = adj.get(tC);
           if (!neighborsC || !neighborsC.some(n => n.token === tA)) continue;
           const triKey = [tA, tB, tC].sort().join(':');
@@ -233,18 +260,39 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
       .bind(chainId, minProfitPct).all();
     await logScanResult(env, chainId, 'cross-dex', opportunities.results || []);
   }
-  console.log(`[executor] scan-and-execute: chain=${chainId} crossDex=${inserted} triangular=${triInserted}`);
-  return { inserted: inserted + triInserted, executed: 0 };
+  // Inline: drain the just-inserted opportunities immediately — opp → execution gap ≈ ms.
+  let executed = 0;
+  if (inserted + triInserted > 0) {
+    const execRes = await executePendingOpportunities(env);
+    executed = execRes.executed || 0;
+  }
+  console.log(`[executor] scan-and-execute: chain=${chainId} crossDex=${inserted} triangular=${triInserted} executed=${executed}`);
+  return { inserted: inserted + triInserted, executed };
 }
 
 app.post('/api/cron/scan-and-execute', async (c) => {
   const body = await safeJson(c);
   const { chainId } = body as { chainId?: number } || {};
   if (!chainId) return c.json({ error: 'chainId required' }, 400);
+  if (chainId !== 137) return c.json({ error: 'POL focus: only chainId 137 (Polygon) is active' }, 400);
   if (!(await dedupCronRun(c.env['funbo-db'], 'scan_execute', 20))) return c.json({ success: true, message: 'Skipped: already ran recently' });
   c.executionCtx.waitUntil(scanAndExecuteChain(c.env, chainId));
-  if (chainId === 137) c.executionCtx.waitUntil(scanBrtQuote(c.env, chainId));
-  return c.json({ success: true, message: 'Scan + execution triggered' });
+  // BRT quote strategy is part of the active_strategies gate — skipped unless explicitly enabled.
+  const active = await getActiveStrategies(c.env['funbo-db']);
+  if (strategyEnabled(active, 'brt_quote')) {
+    c.executionCtx.waitUntil(scanBrtQuote(c.env, chainId));
+  }
+  return c.json({ success: true, message: 'Scan + inline execution triggered' });
+});
+
+// Called by the discovery worker the moment new opportunities exist (forwarded X-API-Key).
+// Drains pending opps without waiting for the 5m execute cron — the opp → execution gap is ~ms.
+app.post('/api/internal/execute-inline', async (c) => {
+  c.executionCtx.waitUntil((async () => {
+    const result = await executePendingOpportunities(c.env);
+    console.log(`[executor] inline execute: ${result.executed} executed`);
+  })());
+  return c.json({ success: true, message: 'Inline execution triggered' });
 });
 
 app.post('/api/spot-strategies/:id/execute', async (c) => {
@@ -298,10 +346,22 @@ app.get('/api/bot/status', async (c) => {
 async function executePendingOpportunities(env: Env): Promise<any> {
   const DB = env['funbo-db'];
   await DB.prepare("UPDATE opportunities SET status = 'skipped', error_msg = 'Stale: pending >1h' WHERE status = 'pending' AND created_at < datetime('now', '-1 hour')").run();
-  const pending = await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 5').all() as { results: any[] };
-  console.log(`[executor] found ${pending.results.length} pending opps`);
-  if (pending.results.length === 0) return { success: true, message: 'No pending opportunities.', executed: 0 };
-  for (const opp of pending.results) {
+  // Global gate: only active strategies execute (default solo_spot,triangular), only Polygon 137.
+  const active = await getActiveStrategies(DB);
+  const oppStrategy = (o: any) => {
+    const rb = (o.router_b || '').toLowerCase();
+    const ra = (o.router_a || '').toLowerCase();
+    if (rb === 'solo_spot') return 'solo_spot';
+    if (rb === 'mm_rebalance') return 'mm';
+    if (rb === 'spot_buy' || rb === 'spot_sell') return 'spot';
+    if (ra && ra === rb) return 'triangular';
+    return 'cross_dex';
+  };
+  const pending = (await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 10').all() as { results: any[] })
+    .results.filter((o: any) => o.chain_id === 137 && strategyEnabled(active, oppStrategy(o)));
+  console.log(`[executor] found ${pending.length} pending opps (active: ${active.join(',')})`);
+  if (pending.length === 0) return { success: true, message: 'No pending opportunities.', executed: 0 };
+  for (const opp of pending) {
     console.log(`[executor] pending opp #${opp.id}: chain=${opp.chain_id} routerA=${(opp.router_a || '').slice(0,10)} routerB=${(opp.router_b || '').slice(0,10)}`);
   }
   const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
@@ -384,12 +444,12 @@ async function executePendingOpportunities(env: Env): Promise<any> {
   const cpuStart = Date.now();
   const MAX_WALL_MS = 45000;
   let executed = 0;
-  for (let i = 0; i < pending.results.length; i += 1) {
+  for (let i = 0; i < pending.length; i += 1) {
     if (Date.now() - cpuStart > MAX_WALL_MS) {
       console.log(`[executor] wall time exceeded, stopping after ${executed} executed`);
       break;
     }
-    const r = await executeSingleOpp(pending.results[i]);
+    const r = await executeSingleOpp(pending[i]);
     if (r) executed++;
   }
   return { success: true, executed, message: `Executed ${executed} opportunities` };

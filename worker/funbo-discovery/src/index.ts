@@ -6,7 +6,7 @@ import { getSwapQuote, getPactSwapTokenType, STABLECOIN_SYMBOLS, PACT_SWAP_CHAIN
 import { analyzeDiscoveredPairs } from './ai-discovery';
 import { encodeV3Path, getWorkingRpcUrl, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, V3_QUOTE_EXACT_INPUT, V3_FEE_TIERS, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
-import { isFeeToken, getKyberQuote, BRT_FEE_PCT } from '../../shared/aggregator';
+import { isFeeToken, getKyberQuote, BRT_FEE_PCT, POL_NATIVE, POL_WRAPPED, isPolToken } from '../../shared/aggregator';
 
 async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
   try {
@@ -33,6 +33,64 @@ async function dedupCronRun(DB: any, key: string, intervalMin: number): Promise<
     await DB.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?`).bind(`last_cron:${key}`, String(now), String(now)).run();
     return true;
   } catch { return true; }
+}
+
+// --- Global strategy config gate ---
+// active_strategies config (default: solo_spot,triangular) decides which strategies may scan/insert.
+// All other strategies (cross-dex arb, MM rebalance, spot swing, BRT quote, cross-chain) stay deactivated.
+async function getActiveStrategies(DB: any): Promise<string[]> {
+  const row = await DB.prepare("SELECT value FROM config WHERE key = 'active_strategies'").first() as { value?: string } | null;
+  const raw = row?.value;
+  if (!raw) return ['solo_spot', 'triangular'];
+  return raw.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+}
+function strategyEnabled(active: string[], key: string): boolean {
+  return active.includes(key.toLowerCase());
+}
+
+// --- POL-focus helpers ---
+function hasPolLeg(p: any): boolean {
+  return isPolToken(p.token_a) || isPolToken(p.token_b);
+}
+
+interface PreferredPair {
+  chain_id: number;
+  token_a: string;
+  token_b: string;
+  label?: string;
+}
+
+// Main swap token is native POL (0x1010). WPOL is used only when no native-POL pool exists for the partner.
+// Normalizes each pair so the POL side is always token_a (native preferred, wrapped fallback).
+function buildPolPreferredPairs(pairs: any[]): PreferredPair[] {
+  const byPartner = new Map<string, PreferredPair & { polSide: string }>();
+  for (const p of pairs) {
+    if (!hasPolLeg(p)) continue;
+    const partner = isPolToken(p.token_a) ? p.token_b : p.token_a;
+    const polSide = (p.token_a === POL_NATIVE || p.token_b === POL_NATIVE) ? POL_NATIVE : POL_WRAPPED;
+    const key = partner.toLowerCase();
+    const existing = byPartner.get(key);
+    if (!existing || (polSide === POL_NATIVE && existing.polSide !== POL_NATIVE)) {
+      byPartner.set(key, { chain_id: p.chain_id, token_a: polSide, token_b: partner, label: p.label, polSide });
+    }
+  }
+  return [...byPartner.values()].map(({ polSide: _ps, ...rest }) => rest);
+}
+
+// Notify the execution worker the moment new opportunities exist so the opp→execution gap is ~ms
+// (no waiting for the next 5m execute cron). Reuses the caller's Cron API key (forwarded header).
+async function triggerInlineExecution(env: any, apiKey?: string | null): Promise<void> {
+  const execUrl = (env.EXECUTION_WORKER_URL || '').replace(/\/+$/, '');
+  if (!execUrl) return;
+  try {
+    await fetch(`${execUrl}/api/internal/execute-inline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+      signal: AbortSignal.timeout(6000),
+    });
+  } catch (e) {
+    console.error('[discovery] inline execution trigger failed:', e);
+  }
 }
 
 const KNOWN_DEX_ROUTERS: Record<string, { name: string; address: string; version: string; quoter_address?: string }[]> = {
@@ -463,7 +521,11 @@ app.post('/api/cron/spot-strategies', async (c) => {
   const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
   const polygon = networks.results.filter((n: any) => n.chain_id === 137);
   if (polygon.length === 0) return c.json({ error: 'No polygon network' }, 400);
-  c.executionCtx.waitUntil(runSpotStrategiesScan(DB, polygon, c.env));
+  const apiKey = c.req.header('X-API-Key');
+  c.executionCtx.waitUntil((async () => {
+    await runSpotStrategiesScan(DB, polygon, c.env);
+    await triggerInlineExecution(c.env, apiKey); // ops → execution gap ≈ ms
+  })());
   return c.json({ success: true, message: 'Spot strategies scan triggered' });
 });
 
@@ -476,7 +538,11 @@ app.post('/api/cron/cross-dex', async (c) => {
   const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
   const polygon = networks.results.filter((n: any) => n.chain_id === 137);
   if (polygon.length === 0) return c.json({ error: 'No polygon network' }, 400);
-  c.executionCtx.waitUntil(runCrossDexScan(DB, polygon, c.env, shard || 1, totalShards || 1));
+  const apiKey = c.req.header('X-API-Key');
+  c.executionCtx.waitUntil((async () => {
+    await runCrossDexScan(DB, polygon, c.env, shard || 1, totalShards || 1);
+    await triggerInlineExecution(c.env, apiKey); // ops → execution gap ≈ ms
+  })());
   return c.json({ success: true, message: 'Cross-DEX scan triggered', shard: shard || 1, totalShards: totalShards || 1 });
 });
 
@@ -545,6 +611,8 @@ async function scanSpotStrategies(DB: any, networks: any[], env: any): Promise<v
 
 
 async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promise<void> {
+  const active = await getActiveStrategies(DB);
+  if (!strategyEnabled(active, 'solo_spot')) return;
   const strategies = await DB.prepare('SELECT * FROM solo_spot_strategies WHERE is_active = 1').all() as { results: any[] };
   if (strategies.results.length === 0) return;
 
@@ -554,6 +622,7 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
 
   for (const strat of strategies.results) {
     try {
+      if (strat.chain_id !== 137) continue; // POL focus: Polygon only
       const net = networks.find((n: any) => n.chain_id === strat.chain_id);
       if (!net?.rpc_url) continue;
       const rpcUrl = await getWorkingRpcUrl(env, net.chain_id, net.rpc_url);
@@ -565,6 +634,12 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
       const stratDecimals = await getTokenDecimals(rpcUrl, strat.token_address, strat.chain_id, env);
       const stratAmountWei = ethers.parseUnits(strat.trade_amount || '10', stratDecimals);
 
+      // POL focus: swap legs are POL (native preferred, WPOL only when no native pool exists).
+      const polPairs = buildPolPreferredPairs((await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(strat.chain_id).all() as { results: any[] }).results);
+      const polSideByPartner = new Map<string, string>();
+      for (const pp of polPairs) polSideByPartner.set(pp.token_b.toLowerCase(), pp.token_a);
+      const polSideForPartner = (partner: string) => polSideByPartner.get(partner.toLowerCase()) || POL_WRAPPED;
+
       const pairRows = await DB.prepare(
         'SELECT token_a AS partner FROM token_pairs WHERE token_b = ? AND chain_id = ? AND is_active = 1 UNION SELECT token_b AS partner FROM token_pairs WHERE token_a = ? AND chain_id = ? AND is_active = 1'
       ).bind(strat.token_address, strat.chain_id, strat.token_address, strat.chain_id).all() as { results: any[] };
@@ -573,7 +648,9 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
       let pairsDone = 0;
       for (const pair of pairRows.results) {
         if (pairsDone >= maxPairsPerStrat) break;
-        const pairToken = pair.partner as string;
+        const rawPartner = pair.partner as string;
+        if (!isPolToken(rawPartner)) continue; // main token is POL; skip non-POL partners
+        const pairToken = polSideForPartner(rawPartner);
         let bestProfit = 0;
         let bestBuyRouter = '';
         let bestSellRouter = '';
@@ -733,14 +810,15 @@ async function scanTriangularArb(
   DB: any, rpcUrl: string, chainId: number,
   allPairs: any[], routers: any[], feeTier: number,
   shard: number, totalShards: number,
-  env?: any
+  env?: any, costBufferPct: number = 2.0
 ): Promise<number> {
   const cfg = await DB.prepare('SELECT key, value FROM config WHERE key = "min_profit_pct_triangular"').first() as { value: string } | null;
   const minProfitPctTriangular = cfg ? parseFloat(cfg.value) : 1.0;
   const tokens = new Set<string>();
   for (const p of allPairs) { tokens.add(p.token_a); tokens.add(p.token_b); }
   const wellKnown = [...tokens].filter(t => isWellKnownToken(t, chainId));
-  const priority = ['0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270','0x3c499c542cef5e3811e1192ce70d8cc03d5c3359','0xc2132d05d31c914a87c6611c10748aeb04b58e8f','0x8f3cf7ad23cd3cadbd9735aff958023239c6a063'];
+  // POL-focus: native POL first, then wrapped WPOL, then stablecoins/blue chips.
+  const priority = ['0x0000000000000000000000000000000000001010','0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270','0x3c499c542cef5e3811e1192ce70d8cc03d5c3359','0xc2132d05d31c914a87c6611c10748aeb04b58e8f','0x8f3cf7ad23cd3cadbd9735aff958023239c6a063'];
   wellKnown.sort((a, b) => {
     const ia = priority.indexOf(a.toLowerCase());
     const ib = priority.indexOf(b.toLowerCase());
@@ -763,6 +841,12 @@ async function scanTriangularArb(
     for (let j = i + 1; j < shardTokenList.length && triCount < maxTriangles; j++) {
       for (let k = j + 1; k < shardTokenList.length && triCount < maxTriangles; k++) {
         const A = shardTokenList[i], B = shardTokenList[j], C = shardTokenList[k];
+        // POL focus: every triangle must include native POL or WPOL as one leg.
+        const isPolLeg = (t: string) => {
+          const a = t.toLowerCase();
+          return a === '0x0000000000000000000000000000000000001010' || a === '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
+        };
+        if (!isPolLeg(A) && !isPolLeg(B) && !isPolLeg(C)) continue;
         if (!hasPair(allPairs, A, B) || !hasPair(allPairs, B, C) || !hasPair(allPairs, C, A)) continue;
         triCount++;
         let routerDone = 0;
@@ -788,7 +872,9 @@ async function scanTriangularArb(
           const step4 = qCA * step3 / qInCA;
           if (step4 > amountIn) {
             const profitPct = Number((step4 - amountIn) * 10000n / amountIn) / 100;
-            if (profitPct >= minProfitPctTriangular) {
+            // Cost-aware: triangle must clear spread + cost buffer (slippage 1% + fees + gas)
+            const effectiveMin = minProfitPctTriangular + costBufferPct;
+            if (profitPct >= effectiveMin) {
               await DB.prepare(
                 'INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")'
               ).bind(chainId, router.address, router.address, A, B, ethers.formatUnits(amountIn, dA), profitPct).run();
@@ -879,13 +965,28 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
   const maxRouterPairsPerPair = 10;
   const rpcDelayMs = 30;
 
+  // Global config: only Polygon (137) runs. Only strategies in active_strategies may scan.
+  const active = await getActiveStrategies(DB);
+  const skipCrossDex = !strategyEnabled(active, 'cross_dex');
+  const skipTri = !strategyEnabled(active, 'triangular') || skipTriangular;
+
+  networks = networks.filter((n: any) => n.chain_id === 137);
+  if (networks.length === 0) { console.log('[scanner] no active Polygon network — skip scan'); return; }
+
+  // Cost awareness: opp needs gross spread to at least cover slippage buffer + LP fee + gas.
+  const costCfg = await DB.prepare('SELECT key, value FROM config WHERE key IN ("slippage_buffer_pct","lp_fee_pct","scan_cost_buffer_pct")').all() as { results: { key: string; value: string }[] };
+  const costMap = Object.fromEntries(costCfg.results.map((r: any) => [r.key, r.value]));
+  const scanCostBufferPct = parseFloat(costMap.scan_cost_buffer_pct || '2.0'); // slippage 1% + LP fee 0.3% + gas ~0.7%
+
   for (const net of networks) {
     const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(net.chain_id).all() as { results: any[] };
     const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(net.chain_id).all() as { results: any[] };
-    if (routers.results.length < 2 || pairs.results.length === 0) continue;
+    // POL focus: only POL/WPOL pairs, native POL side normalized to token_a where possible.
+    const polPairs = buildPolPreferredPairs(pairs.results);
+    if (routers.results.length < 2 || polPairs.length === 0) continue;
 
     const routerPairCount = (routers.results.length * (routers.results.length - 1)) / 2;
-    const pairsToScan = Math.min(pairs.results.length, maxPairsPerRun);
+    const pairsToScan = Math.min(polPairs.length, maxPairsPerRun);
     const routerPairsPerPair = Math.min(routerPairCount, maxRouterPairsPerPair);
     const estimatedWork = pairsToScan * routerPairsPerPair;
     if (estimatedWork > 300) {
@@ -894,10 +995,10 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
     }
 
     // Sharding: split pairs across shards
-    const pairsPerShard = Math.ceil(pairs.results.length / totalShards);
+    const pairsPerShard = Math.ceil(polPairs.length / totalShards);
     const startIdx = (shard - 1) * pairsPerShard;
-    const endIdx = Math.min(startIdx + pairsPerShard, pairs.results.length);
-    const shardPairs = pairs.results.slice(startIdx, endIdx);
+    const endIdx = Math.min(startIdx + pairsPerShard, polPairs.length);
+    const shardPairs = polPairs.slice(startIdx, endIdx);
 
     try {
       const _rpcUrl = await getWorkingRpcUrl(env, net.chain_id, net.rpc_url);
@@ -909,6 +1010,7 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
       let inserted = 0;
       let workDone = 0;
 
+      if (!skipCrossDex) {
       for (let pIdx = 0; pIdx < shardPairs.length && workDone < maxPairsPerRun * maxRouterPairsPerPair; pIdx++) {
         const pair = shardPairs[pIdx];
         let routerPairsDone = 0;
@@ -924,7 +1026,8 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
             const worstOut = quoteA > quoteB ? quoteB : quoteA;
             if (worstOut === 0n) continue;
             const profitBps = Number((bestOut - worstOut) * 10000n / worstOut) / 100;
-            if (profitBps < minProfitPctCrossDex) continue;
+            // Require net edge after cost buffer (slippage buffer + LP fee + gas)
+            if (profitBps < minProfitPctCrossDex || profitBps < scanCostBufferPct + minProfitPctCrossDex) continue;
             const buyRouter = quoteA > quoteB ? routers.results[i] : routers.results[j];
             const sellRouter = quoteA > quoteB ? routers.results[j] : routers.results[i];
             const tradeAmountRes = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as { value: string } | null;
@@ -937,19 +1040,15 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
           }
         }
       }
+      }
       let triInserted = 0;
-      if (routers.results.length > 0 && !skipTriangular) {
-        triInserted = await scanTriangularArb(DB, _rpcUrl, net.chain_id, shardPairs, routers.results, 3000, shard, totalShards, env);
+      if (routers.results.length > 0 && !skipTri) {
+        triInserted = await scanTriangularArb(DB, _rpcUrl, net.chain_id, shardPairs, routers.results, 3000, shard, totalShards, env, scanCostBufferPct);
       }
       console.log(`[scanner] chain=${net.chain_id} cross_dex=${inserted} triangular=${triInserted} work=${workDone} (shard ${shard}/${totalShards})`);
     } catch (e) { console.error('[scanner] scan failed:', e); }
   }
-  if (networks.length > 1) {
-    const ccInserted = await scanCrossChainArb(DB, networks, 3000);
-    console.log(`[scanner] cross_chain=${ccInserted}`);
-  } else {
-    console.log(`[scanner] cross_chain=0 (single chain mode)`);
-  }
+  console.log('[scanner] cross_chain=0 (single-chain Polygon mode)');
 }
 
 
@@ -972,20 +1071,15 @@ async function getBRTMode(DB: any): Promise<'low'|'med'|'high'> {
 
 async function runSpotStrategiesScan(DB: any, polygon: any[], env: any) {
   try {
-    // AI auto mode for BRT: activate only the selected mm_lp_configs row, others paused
-    const brtMode = await getBRTMode(DB);
-    const modeMap: Record<string,string> = { low: 'BRT-low', med: 'BRT-med', high: 'BRT-high' };
-    const activeLabel = modeMap[brtMode];
-    if (activeLabel) {
-      await DB.prepare("UPDATE mm_lp_configs SET is_active=0 WHERE token_address='0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b'").run();
-      await DB.prepare("UPDATE mm_lp_configs SET is_active=1 WHERE token_address='0xeCb4cAc0C9e5cBd42a9Ed36467ce8f96072AD58b' AND label=?").bind(activeLabel).run();
-      console.log(`[mm-ai] BRT mode ${brtMode} active ${activeLabel}`);
-    }
-    await scanSoloSpotStrategies(DB, polygon, env);
-    await scanSpotStrategies(DB, polygon, env);
-    await scanMMStrategies(DB, polygon, env);
+    // Global config: Polygon only + active_strategies gate (default solo_spot,triangular — MM/spot/BRT stay off)
+    const active = await getActiveStrategies(DB);
+    const poly = polygon.filter((n: any) => n.chain_id === 137);
+    if (poly.length === 0) { console.log('[cron] no active Polygon network — skip'); return; }
+    if (strategyEnabled(active, 'solo_spot')) await scanSoloSpotStrategies(DB, poly, env);
+    if (strategyEnabled(active, 'spot')) await scanSpotStrategies(DB, poly, env);
+    if (strategyEnabled(active, 'mm')) await scanMMStrategies(DB, poly, env);
     await updateLastScan(DB, 'last_auto_scan');
-    console.log('[cron] spot strategies scan completed');
+    console.log(`[cron] spot strategies scan completed (active: ${active.join(',')})`);
   } catch (e: any) {
     console.error('[cron] spot strategies scan failed:', e);
   }

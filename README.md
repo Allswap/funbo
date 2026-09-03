@@ -96,6 +96,12 @@ npx wrangler d1 execute bot-db --command "DELETE FROM api_keys WHERE key_hash = 
 | `max_profit_pct` | `20.0` | Max profit % to execute (upper bound filter) |
 | `max_trade_decimals` | `3` | Truncate amount to N decimals |
 | `min_slippage` | `0.5` | Min slippage floor — bot auto-detects optimal slippage, clamped to at least this |
+| `slippage_buffer_pct` | `1.0` | Fixed buffer added on top of live price impact + LP fee (sandwich/volatility protection) |
+| `lp_fee_pct` | `0.3` | LP fee % used in live slippage calc for V2 routes (V3 uses the fee tier) |
+| `scan_cost_buffer_pct` | `2.0` | Min gross spread a scan must clear before inserting an opp (slippage 1% + LP fee + gas) |
+| `active_strategies` | `solo_spot,triangular` | Comma list of enabled strategies — everything else is deactivated |
+| `main_token` | `0x0000000000000000000000000000000000001010` | Main swap token = native POL |
+| `wrapped_token` | `0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270` | WPOL — used only when a pool has no native-POL path |
 | `daily_loss_limit` | `5.0` | Circuit breaker — stops if daily loss exceeds |
 | `mm_rebalance_threshold` | `5.0` | LP rebalance threshold |
 | `trade_token_a` | — | Token A address for arb pairs |

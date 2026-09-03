@@ -12,6 +12,7 @@ declare global {
     NOWNODES_API_KEY?: string;
     GETBLOCK_API_KEY?: string;
     MORALIS_API_KEY?: string;
+    EXECUTION_WORKER_URL?: string;
     FUNBO_R2?: R2Bucket;
   }
 }

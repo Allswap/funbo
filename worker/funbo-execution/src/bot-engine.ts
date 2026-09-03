@@ -1,7 +1,8 @@
 import { ethers } from 'ethers';
 import { goplusScanTokenSafety, BlockscoutClient, isWellKnownTokenWithConfig } from './api-providers';
 import { getWorkingProvider } from './rpc-pool';
-import { isFeeToken, getKyberQuote, buildKyberSwapData, KYBER_ROUTER } from '../../shared/aggregator';
+import { getPolPriceUsd } from '../../shared/pol-prices';
+import { isFeeToken, getKyberQuote, buildKyberSwapData, KYBER_ROUTER, isPolToken, POL_NATIVE, POL_WRAPPED } from '../../shared/aggregator';
 
 export async function writeR2Log(env: Env, bucket: string, key: string, data: any): Promise<void> {
   try {
@@ -92,6 +93,31 @@ function getMevProtectedProvider(_env: Env, network: NetworkConfig): ethers.Json
     return new ethers.JsonRpcProvider(network.mev_protected_rpc);
   }
   return new ethers.JsonRpcProvider(network.rpc_url);
+}
+
+/**
+ * Live on-chain gas pricing. Polygon EIP-1559: uses the mempool's maxFeePerGas /
+ * maxPriorityFeePerGas. On legacy-only chains falls back to gasPrice. Keeps the old
+ * static 35/90 gwei values only as a last-resort fallback (never a hardcap).
+ */
+async function getGasOverrides(provider: ethers.Provider): Promise<Record<string, bigint>> {
+  try {
+    const feeData = await provider.getFeeData();
+    if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas && feeData.maxFeePerGas > 0n) {
+      return { maxPriorityFeePerGas: feeData.maxPriorityFeePerGas, maxFeePerGas: feeData.maxFeePerGas };
+    }
+    if (feeData.gasPrice && feeData.gasPrice > 0n) return { gasPrice: feeData.gasPrice };
+  } catch {}
+  return { maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') };
+}
+
+/** On-chain block timestamp based deadline (avoids CF wall-clock drift → EXPIRED). */
+async function getBlockchainDeadline(provider: ethers.Provider, ttlSec: number = 600): Promise<number> {
+  try {
+    const block = await provider.getBlock('latest');
+    if (block && block.timestamp) return block.timestamp + ttlSec;
+  } catch {}
+  return Math.floor(Date.now() / 1000) + ttlSec;
 }
 
 export interface TradeResult {
@@ -209,10 +235,16 @@ async function executeAndRecordTransaction(
     });
 
     receipt = await waitTx(txResp, 1, 30000);
+    if (!receipt) {
+      return { txHash, success: false, receipt: null, errorMsg: 'tx.wait timeout or no receipt' };
+    }
 
     const gasUsed = Number(receipt.gasUsed);
     const gasPrice = receipt.gasPrice ? Number(receipt.gasPrice) / 1e9 : 0;
-    const gasCostNative = (gasUsed * (receipt.gasPrice || 0n)).toString();
+    const gasCostNative = (BigInt(gasUsed) * (receipt.gasPrice || 0n)).toString();
+    // Live tx cost in USD (POL spot from CoinGecko, KV-cached 2 min) — estimate survives gecko outage.
+    const polUsd = await getPolPriceUsd(env);
+    const gasCostUsd = polUsd > 0 ? String((Number(gasCostNative) / 1e18) * polUsd) : undefined;
 
     const logsJson = JSON.stringify(receipt.logs.map(l => ({
       address: l.address,
@@ -224,11 +256,11 @@ async function executeAndRecordTransaction(
     await db.prepare(`
       UPDATE bot_transactions SET
         tx_status = ?, block_number = ?, gas_used = ?, gas_price_gwei = ?,
-        gas_cost_native = ?, logs_json = ?, confirmed_at = ?
+        gas_cost_native = ?, gas_cost_usd = ?, logs_json = ?, confirmed_at = ?
       WHERE tx_hash = ?
     `).bind(
       'confirmed', receipt.blockNumber, gasUsed, gasPrice,
-      gasCostNative, logsJson, new Date().toISOString(), txHash
+      gasCostNative, gasCostUsd, logsJson, new Date().toISOString(), txHash
     ).run();
 
     return { txHash, success: true, receipt, errorMsg: undefined };
@@ -249,6 +281,11 @@ const V2_ROUTER_ABI = [
   'function factory() view returns (address)',
   'function getAmountsOut(uint,address[]) view returns (uint[])',
   'function swapExactTokensForTokens(uint,uint,address[],address,uint) returns (uint[])',
+  'function swapExactETHForTokens(uint,address[],address,uint) payable returns (uint[])',
+  'function swapExactTokensForETH(uint,uint,address[],address,uint) returns (uint[])',
+  'function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint,uint,address[],address,uint)',
+  'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint,address[],address,uint) payable',
+  'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint,uint,address[],address,uint)',
   'function WETH() view returns (address)',
 ] as const;
 
@@ -348,8 +385,7 @@ async function ensureWmaticBalance(
     const tx = await wmatic.deposit({
       value: wrapAmount,
       gasLimit: 100000,
-      maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-      maxFeePerGas: ethers.parseEther('0.1'),
+      ...await getGasOverrides(provider),
     });
     const receipt = await waitTx(tx, 1, 30000);
     if (!receipt || receipt.status === 0) {
@@ -379,6 +415,11 @@ function encodeV3Path(tokens: string[], fees: number[]): string {
   return path.toLowerCase();
 }
 
+/** Native POL (0x1010) is not an ERC-20 in pools/ABI paths — use wrapped WPOL for path quoting and swaps. */
+function toWrappedForPath(addr: string): string {
+  return isPolToken(addr) ? POL_WRAPPED : addr.toLowerCase();
+}
+
 async function getAmountOut(
   provider: ethers.Provider,
   tokenIn: string,
@@ -388,7 +429,7 @@ async function getAmountOut(
 ): Promise<bigint | null> {
   try {
     const router = new ethers.Contract(routerAddress, V2_ROUTER_ABI, provider);
-    const amounts = await router.getAmountsOut(amountIn, [tokenIn, tokenOut]);
+    const amounts = await router.getAmountsOut(amountIn, [toWrappedForPath(tokenIn), toWrappedForPath(tokenOut)]);
     return amounts[1] as bigint;
   } catch {
     return null;
@@ -493,10 +534,12 @@ async function estimateGasCost(
     if (sellVersion === 'v3') estGas += 180000n; else estGas += 150000n;
     estGas += 50000n;
 
-    const feeTierGwei = 35;
-    const maxFeeGwei = 90;
-    const avgGasPrice = BigInt(Math.floor((feeTierGwei + maxFeeGwei) / 2));
-    const gasCostNative = estGas * avgGasPrice * 1000000000n;
+    // Live gas price — Polygon EIP-1559 fee data, fallback to 60 gwei estimate only when unavailable
+    const feeData = await provider.getFeeData();
+    const liveFee = feeData.maxFeePerGas && feeData.maxFeePerGas > 0n
+      ? feeData.maxFeePerGas
+      : (feeData.gasPrice && feeData.gasPrice > 0n ? feeData.gasPrice : ethers.parseUnits('60', 'gwei'));
+    const gasCostNative = estGas * liveFee;
 
     const tradeAmountWei = ethers.parseEther('0.1');
     const quoteResult = await quoteAmountOut(provider, nativeToken, tokenB, gasCostNative, buyRouter, feeTier);
@@ -688,14 +731,22 @@ async function verifyRouterSafety(
   }
 }
 
+/**
+ * Live on-chain slippage = measured price impact + LP fee + fixed buffer (default 1%).
+ * price impact & reserves come straight from the pair contract at execution time,
+ * LP fee from the DEX version/fee tier, and the buffer is a global config safety margin.
+ */
 async function calculateOptimalSlippage(
   provider: ethers.Provider,
   routerAddress: string,
   amountInWei: bigint,
   tokenA: string,
   tokenB: string,
-  minSlippagePct: number
-): Promise<{ optimal: number; priceImpact: number } | null> {
+  minSlippagePct: number,
+  opts?: { bufferPct?: number; lpFeePct?: number }
+): Promise<{ optimal: number; priceImpact: number; liquidityFeePct: number; bufferPct: number } | null> {
+  const bufferPct = opts?.bufferPct ?? 1.0;
+  const lpFeePct = opts?.lpFeePct ?? 0.3;
   try {
     const router = new ethers.Contract(routerAddress, V2_ROUTER_ABI, provider);
     const factoryAddr = await router.factory();
@@ -703,7 +754,7 @@ async function calculateOptimalSlippage(
     const pairAddr = await factory.getPair(tokenA, tokenB);
 
     if (!pairAddr || pairAddr === ethers.ZeroAddress) {
-      return { optimal: minSlippagePct, priceImpact: 0 };
+      return { optimal: Math.min(Math.max(minSlippagePct, lpFeePct + bufferPct), 10), priceImpact: 0, liquidityFeePct: lpFeePct, bufferPct };
     }
 
     const pair = new ethers.Contract(pairAddr as string, V2_PAIR_ABI, provider);
@@ -714,7 +765,7 @@ async function calculateOptimalSlippage(
     const reserveIn = isToken0 ? (reserve0 as bigint) : (reserve1 as bigint);
 
     if (reserveIn === 0n) {
-      return { optimal: minSlippagePct, priceImpact: 0 };
+      return { optimal: Math.min(Math.max(minSlippagePct, lpFeePct + bufferPct), 10), priceImpact: 0, liquidityFeePct: lpFeePct, bufferPct };
     }
 
     const priceImpact = Number((amountInWei * 10000n) / reserveIn) / 100;
@@ -723,16 +774,18 @@ async function calculateOptimalSlippage(
       return null;
     }
 
-    const optimal = Math.max(priceImpact + 0.1, minSlippagePct);
+    // live slippage = price impact + LP fee + fixed buffer, clamped to min floor
+    const optimal = Math.min(Math.max(priceImpact + lpFeePct + bufferPct, minSlippagePct), 10);
 
-    return { optimal, priceImpact };
+    return { optimal, priceImpact, liquidityFeePct: lpFeePct, bufferPct };
   } catch (error: any) {
     console.error("Slippage calc failed:", error);
-    return { optimal: minSlippagePct, priceImpact: 0 };
+    return { optimal: Math.min(Math.max(minSlippagePct, lpFeePct + bufferPct), 10), priceImpact: 0, liquidityFeePct: lpFeePct, bufferPct };
   }
 }
 
 async function ensureAllowance(
+  provider: ethers.Provider,
   tokenContract: ethers.Contract,
   owner: string,
   spender: string,
@@ -745,8 +798,7 @@ async function ensureAllowance(
     console.log(`[allowance] approving ${spender.slice(0,10)} for ${await tokenContract.symbol?.().catch(() => 'token')} amount=${amount.toString()}`);
     const tx = await tokenContract.approve(spender, ethers.MaxUint256, {
       gasLimit: 100000,
-      maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-      maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+      ...await getGasOverrides(provider),
     });
     const receipt = await waitTx(tx, 1, 30000);
     if (!receipt || receipt.status === 0) {
@@ -774,6 +826,9 @@ async function executeSwap(
   tokenInDecimals: number = 18
 ): Promise<ethers.TransactionResponse> {
   const amountInWei = ethers.parseUnits(amountIn, tokenInDecimals);
+  // Native POL is the main swap token; WPOL is used only in the pool path.
+  const tokenInIsNative = isPolToken(tokenA) && tokenA === POL_NATIVE;
+  const tokenOutIsNative = isPolToken(tokenB) && tokenB === POL_NATIVE;
   const amountOut = await getAmountOut(provider, tokenA, tokenB, amountInWei, routerAddress);
 
   if (!amountOut || amountOut === 0n) {
@@ -782,38 +837,41 @@ async function executeSwap(
 
   const amountOutMin = amountOut * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
 
-  const tokenContract = new ethers.Contract(tokenA, ERC20_ABI, wallet);
-  const ok = await ensureAllowance(tokenContract, wallet.address, routerAddress, amountInWei);
-  if (!ok) {
-    throw new Error("Failed to set token allowance");
+  const router = new ethers.Contract(routerAddress, V2_ROUTER_ABI, wallet);
+  const deadline = await getBlockchainDeadline(provider);
+  const gas = { gasLimit: tokenInIsNative || tokenOutIsNative ? 450000 : 500000, ...await getGasOverrides(provider) };
+  const path = [toWrappedForPath(tokenA), toWrappedForPath(tokenB)];
+  const isFee = isFeeToken(tokenA) || isFeeToken(tokenB);
+
+  // -- Native POL in → token out (no allowance needed, value sent) --
+  if (tokenInIsNative) {
+    if (isFee) {
+      return (await router.swapExactETHForTokensSupportingFeeOnTransferTokens(amountOutMin, path, wallet.address, deadline, { ...gas, value: amountInWei })) as ethers.TransactionResponse;
+    }
+    return (await router.swapExactETHForTokens(amountOutMin, path, wallet.address, deadline, { ...gas, value: amountInWei })) as ethers.TransactionResponse;
   }
 
-  const router = new ethers.Contract(routerAddress, V2_ROUTER_ABI, wallet);
-  const deadline = Math.floor(Date.now() / 1000) + 600;
+  // -- Token in → native POL out --
+  if (tokenOutIsNative) {
+    const tokenContract = new ethers.Contract(tokenA, ERC20_ABI, wallet);
+    const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
+    if (!ok) throw new Error("Failed to set token allowance");
+    const tx = isFee
+      ? await router.swapExactTokensForETHSupportingFeeOnTransferTokens(amountInWei, amountOutMin, path, wallet.address, deadline, gas)
+      : await router.swapExactTokensForETH(amountInWei, amountOutMin, path, wallet.address, deadline, gas);
+    return tx as ethers.TransactionResponse;
+  }
 
-  const isFee = isFeeToken(tokenA) || isFeeToken(tokenB);
+  // -- Token → token (any supported-fee pair) --
+  const tokenContract = new ethers.Contract(tokenA, ERC20_ABI, wallet);
+  const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
+  if (!ok) throw new Error("Failed to set token allowance");
+
   if (isFee) {
     // BRT 8% fee: must use SupportingFeeOnTransferTokens, amountOutMin is enforced on received amount
-    const tx = await (router as any).swapExactTokensForTokensSupportingFeeOnTransferTokens(
-      amountInWei,
-      amountOutMin,
-      [tokenA, tokenB],
-      wallet.address,
-      deadline,
-      { gasLimit: 600000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }
-    ) as ethers.TransactionResponse;
-    return tx;
+    return (await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amountInWei, amountOutMin, path, wallet.address, deadline, gas)) as ethers.TransactionResponse;
   }
-  const tx = await router.swapExactTokensForTokens(
-    amountInWei,
-    amountOutMin,
-    [tokenA, tokenB],
-    wallet.address,
-    deadline,
-    { gasLimit: 500000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }
-  ) as ethers.TransactionResponse;
-
-  return tx;
+  return (await router.swapExactTokensForTokens(amountInWei, amountOutMin, path, wallet.address, deadline, gas)) as ethers.TransactionResponse;
 }
 
 // Multi-aggregator execution for BRT (Kyber -> 0x -> ParaSwap -> Odos -> OpenOcean, skip 1inch)
@@ -831,9 +889,9 @@ async function executeKyberSwap(
   const best = await buildBestAggregatorSwap(tokenIn, tokenOut, amountInWei, wallet.address, slippagePct, (provider as any)._env || {});
   if (best) {
     const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
-    const ok = await ensureAllowance(tokenContract, wallet.address, best.router, amountInWei);
+    const ok = await ensureAllowance(provider, tokenContract, wallet.address, best.router, amountInWei);
     if (!ok) throw new Error(`${best.source} allowance failed`);
-    const tx = await wallet.sendTransaction({ to: best.router, data: best.data, gasLimit: 650000, maxPriorityFeePerGas: ethers.parseUnits('35','gwei'), maxFeePerGas: ethers.parseUnits('90','gwei') });
+    const tx = await wallet.sendTransaction({ to: best.router, data: best.data, gasLimit: 650000, ...await getGasOverrides(provider) });
     console.log(`[aggregator] BRT via ${best.source} router ${best.router.slice(0,10)}`);
     return tx as ethers.TransactionResponse;
   }
@@ -841,9 +899,9 @@ async function executeKyberSwap(
   const kyberData = await buildKyberSwapData(tokenIn, tokenOut, amountInWei, slippagePct, wallet.address);
   if (!kyberData) throw new Error('All aggregators encode failed for BRT (Kyber/0x/ParaSwap)');
   const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
-  const ok = await ensureAllowance(tokenContract, wallet.address, kyberData.router, amountInWei);
+  const ok = await ensureAllowance(provider, tokenContract, wallet.address, kyberData.router, amountInWei);
   if (!ok) throw new Error('Kyber allowance failed');
-  const tx = await wallet.sendTransaction({ to: kyberData.router, data: kyberData.data, gasLimit: 600000, maxPriorityFeePerGas: ethers.parseUnits('35','gwei'), maxFeePerGas: ethers.parseUnits('90','gwei') });
+  const tx = await wallet.sendTransaction({ to: kyberData.router, data: kyberData.data, gasLimit: 600000, ...await getGasOverrides(provider) });
   return tx as ethers.TransactionResponse;
 }
 
@@ -873,13 +931,13 @@ async function executeSwapV3(
   const amountOutMin = quotedAmountOut * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
 
   const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
-  const ok = await ensureAllowance(tokenContract, wallet.address, routerAddress, amountInWei);
+  const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
   if (!ok) {
     throw new Error("Failed to set token allowance");
   }
 
   const v3Router = new ethers.Contract(routerAddress, V3_ROUTER_ABI, wallet);
-  const deadline = Math.floor(Date.now() / 1000) + 600;
+  const deadline = await getBlockchainDeadline(provider);
 
   const tx = await v3Router.exactInput({
     path,
@@ -887,7 +945,7 @@ async function executeSwapV3(
     deadline,
     amountIn: amountInWei,
     amountOutMinimum: amountOutMin,
-  }, { gasLimit: 500000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }) as ethers.TransactionResponse;
+  }, { gasLimit: 500000, ...await getGasOverrides(provider) }) as ethers.TransactionResponse;
 
   return tx;
 }
@@ -914,7 +972,7 @@ async function executeSwapBalancer(
   const amountOutMin = quotedAmountOut * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
 
   const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
-  const ok = await ensureAllowance(tokenContract, wallet.address, routerAddress, amountInWei);
+  const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
   if (!ok) {
     throw new Error("Failed to set token allowance");
   }
@@ -933,7 +991,7 @@ async function executeSwapBalancer(
     wallet.address,
     false,
     '0x',
-    { gasLimit: 500000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }
+    { gasLimit: 500000, ...await getGasOverrides(provider) }
   ) as ethers.TransactionResponse;
 
   return tx;
@@ -953,12 +1011,12 @@ async function executeSwapUniversal(
   const amountInWei = ethers.parseUnits(amountIn, tokenInDecimals);
 
   const tokenContract = new ethers.Contract(tokenIn, ERC20_ABI, wallet);
-  const ok = await ensureAllowance(tokenContract, wallet.address, routerAddress, amountInWei);
+  const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
   if (!ok) {
     throw new Error("Failed to set token allowance");
   }
 
-  const deadline = Math.floor(Date.now() / 1000) + 600;
+  const deadline = await getBlockchainDeadline(provider);
   const path = encodeV3Path([tokenIn, tokenOut], [3000]); // Default 0.3% fee tier
   const amountOutMin = amountInWei; // Will be updated with quote
   const swapData = ethers.AbiCoder.defaultAbiCoder().encode(
@@ -970,8 +1028,7 @@ async function executeSwapUniversal(
   const tx = await router.execute('0x01', [swapData], deadline, { // V3 swap command
     value: 0,
     gasLimit: 500000,
-    maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-    maxFeePerGas: ethers.parseUnits('90', 'gwei')
+    ...await getGasOverrides(provider)
   }) as ethers.TransactionResponse;
 
   return tx;
@@ -1059,7 +1116,7 @@ export async function executeOpportunity(
 ): Promise<TradeResult> {
   const DB = env['funbo-db'];
   const defaultRpcPool = '';
-  const cfg = await DB.prepare('SELECT key, value FROM config WHERE key IN ("min_profit_pct","max_profit_pct","min_balance_pct","max_balance_pct","min_balance_amount","min_slippage","max_decimals","min_net_profit_pct","min_net_profit_pct_cross_dex","min_net_profit_pct_triangular","min_net_profit_pct_solo_spot","min_net_profit_pct_mm","min_net_profit_pct_spot_swing")').all() as { results: { key: string; value: string }[] };
+  const cfg = await DB.prepare('SELECT key, value FROM config WHERE key IN ("min_profit_pct","max_profit_pct","min_balance_pct","max_balance_pct","min_balance_amount","min_slippage","max_decimals","min_net_profit_pct","min_net_profit_pct_cross_dex","min_net_profit_pct_triangular","min_net_profit_pct_solo_spot","min_net_profit_pct_mm","min_net_profit_pct_spot_swing","slippage_buffer_pct","lp_fee_pct","active_strategies")').all() as { results: { key: string; value: string }[] };
   const cfgMap = Object.fromEntries(cfg.results.map((r: any) => [r.key, r.value]));
   const minProfitPct = parseFloat(cfgMap.min_profit_pct || '0.1');
   const maxProfitPct = parseFloat(cfgMap.max_profit_pct || '50');
@@ -1146,7 +1203,19 @@ export async function executeOpportunity(
   const buyVersion = (buyRouter.version || 'v2').toLowerCase();
   const sellVersion = (sellRouter.version || 'v2').toLowerCase();
 
-  const slippagePct = minSlippagePct;
+  // Live slippage = on-chain price impact + LP fee + fixed 1% buffer (sandwich/volatility protection)
+  const slippageBufferPct = parseFloat(cfgMap.slippage_buffer_pct || '1.0');
+  const lpFeePct = parseFloat(cfgMap.lp_fee_pct || '0.3');
+  const slippageCalc = await calculateOptimalSlippage(
+    provider, buyRouter.address, ethers.parseEther(tradeAmount), tokenA, tokenB,
+    minSlippagePct, { bufferPct: slippageBufferPct, lpFeePct }
+  );
+  if (!slippageCalc) {
+    console.log(`[executor] opp #${opp.id} skip: price impact > 10%`);
+    return { success: false, strategy: 'arb', tokenA, tokenB, amountIn: '0', amountOut: '0', profitPct: opp.profit_pct || 0, status: 'skipped', txHash: null, errorMsg: 'Liquidity too thin (price impact > 10%)' };
+  }
+  const slippagePct = slippageCalc.optimal;
+  console.log(`[executor] opp #${opp.id} live slippage=${slippagePct.toFixed(2)}% impact=${slippageCalc.priceImpact.toFixed(2)}% lp fee=${slippageCalc.liquidityFeePct}% buffer=${slippageCalc.bufferPct}%`);
 
   const executionMinProfit = Math.max(minNetProfitPct, 0.1);
   const liveArb = await scanArbOpportunity(provider, tokenA, tokenB, ethers.parseEther(tradeAmount), executionMinProfit, maxProfitPct, buyRouter, sellRouter, feeTier);
@@ -1157,8 +1226,9 @@ export async function executeOpportunity(
 
   const estGasCost = await estimateGasCost(provider, network.chain_id, buyRouter, sellRouter, tokenA, tokenB, feeTier);
   const grossProfitPct = liveArb.profitPct;
-  const netProfitPct = grossProfitPct - estGasCost;
-  console.log(`[executor] opp #${opp.id} live arb: gross=${grossProfitPct.toFixed(3)}% estGas=${estGasCost.toFixed(3)}% net=${netProfitPct.toFixed(3)}% (threshold ${minNetProfitPct}%)`);
+  // Net = gross spread − live gas − slippage (impact + LP fee + buffer). All live/on-chain.
+  const netProfitPct = grossProfitPct - estGasCost - slippagePct;
+  console.log(`[executor] opp #${opp.id} live arb: gross=${grossProfitPct.toFixed(3)}% estGas=${estGasCost.toFixed(3)}% slippage=${slippagePct.toFixed(2)}% net=${netProfitPct.toFixed(3)}% (threshold ${minNetProfitPct}%)`);
   
   if (netProfitPct < minNetProfitPct) {
     console.log(`[executor] opp #${opp.id} skip: net profit ${netProfitPct.toFixed(3)}% below threshold ${minNetProfitPct}%`);
@@ -1196,16 +1266,14 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
             gasLimit: 100000,
-            maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-            maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+            ...await getGasOverrides(provider),
           });
           const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
           gasLimit: 500000,
-          maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-          maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+          ...await getGasOverrides(provider),
         }) as ethers.TransactionResponse;
         return tx;
       } catch (err) {
@@ -1312,7 +1380,7 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
         amountOutUsd: undefined,
         txHash: result.txHash,
         txStatus: result.status === 'success' ? 'confirmed' : 'failed',
-        errorMsg: result.errorMsg,
+        errorMsg: result.errorMsg ?? undefined,
       });
     } catch (e) { console.error('[executor] failed to record arb tx:', e); }
   }
@@ -1433,8 +1501,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
             gasLimit: 100000,
-            maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-            maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+            ...await getGasOverrides(provider),
           });
           const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
@@ -1445,8 +1512,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
           : 0n;
         const tx = await arbContract.executeArb(from, to, amountInWei, minOut, dexData, {
           gasLimit: 500000,
-          maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-          maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+          ...await getGasOverrides(provider),
         }) as ethers.TransactionResponse;
         return tx;
       } catch (err) {
@@ -1461,12 +1527,12 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
       const path = encodeV3Path([from, to], [feeTier]);
-      const deadline = Math.floor(Date.now() / 1000) + 600;
+      const deadline = await getBlockchainDeadline(provider);
       const routerContract = new ethers.Contract(router.address, V3_ROUTER_ABI, wallet);
       const minOut = ethers.parseUnits(amount, decimals) * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
       const tx = await routerContract.exactInput(
         { path, recipient: wallet.address, deadline, amountIn: ethers.parseUnits(amount, decimals), amountOutMinimum: minOut },
-        { gasLimit: 500000, maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'), maxFeePerGas: ethers.parseUnits('90', 'gwei') }
+        { gasLimit: 500000, ...await getGasOverrides(provider) }
       ) as ethers.TransactionResponse;
       return tx;
 
@@ -1539,7 +1605,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
           amountOut: ethers.formatUnits(afterA, dA),
           txHash: result.txHash,
           txStatus: result.status === 'success' ? 'confirmed' : 'failed',
-          errorMsg: result.errorMsg,
+          errorMsg: result.errorMsg ?? undefined,
         });
       } catch (e) { console.error('[executor] failed to record triangular tx:', e); }
     }
@@ -1744,16 +1810,14 @@ export async function runBotStrategy(
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
             gasLimit: 100000,
-            maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-            maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+            ...await getGasOverrides(provider),
           });
           const appReceipt = await waitTx(appTx, 1, 30000);
           if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
         }
         const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
           gasLimit: 500000,
-          maxPriorityFeePerGas: ethers.parseUnits('35', 'gwei'),
-          maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+          ...await getGasOverrides(provider),
         }) as ethers.TransactionResponse;
         return tx;
       } catch (err) {
@@ -2165,7 +2229,7 @@ export async function executeSoloSpotFromOpp(
     } catch {}
   }
 
-  const soloResult = { success: true, strategy: 'solo_spot', tokenA: pairToken, tokenB: configuredToken, amountIn: ethers.formatUnits(tradeAmountWei, pairTokenDec), amountOut: ethers.formatUnits(netPairToken, pairTokenDec), profitPct: netProfitPct, status: 'success', txHash: buyTxHash, errorMsg: null, gasSpent: undefined, netProfit: ethers.formatUnits(netPairToken, pairTokenDec) };
+  const soloResult: TradeResult = { success: true, strategy: 'solo_spot', tokenA: pairToken, tokenB: configuredToken, amountIn: ethers.formatUnits(tradeAmountWei, pairTokenDec), amountOut: ethers.formatUnits(netPairToken, pairTokenDec), profitPct: netProfitPct, status: 'success', txHash: buyTxHash, errorMsg: null, gasSpent: undefined, netProfit: ethers.formatUnits(netPairToken, pairTokenDec) };
 
   if (buyTxHash || sellTxHash) {
     try {
