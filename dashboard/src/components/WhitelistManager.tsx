@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { configService, networkService } from '../api/client';
-import { Plus, Trash2, Loader2, RefreshCw, Power, Shield } from 'lucide-react';
+import { api } from '../api/client';
+import { Plus, Trash2, Loader2, RefreshCw, Power, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function WhitelistManager() {
@@ -8,6 +9,8 @@ export function WhitelistManager() {
   const [networks, setNetworks] = useState<any[]>([]);
   const [form, setForm] = useState({ chainId: '', address: '', label: '' });
   const [saving, setSaving] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -27,9 +30,20 @@ export function WhitelistManager() {
 
   const persist = async (updated: Record<string, string[]>) => {
     setSaving(true);
+    setSyncResult(null);
     try {
       await configService.set('well_known_tokens', JSON.stringify(updated));
       setConfigTokens(updated);
+      try {
+        setSyncing(true);
+        const res = await api.post('/api/executor/sync-approvals');
+        setSyncResult(res.data);
+      } catch (err) {
+        console.error('Failed to sync executor approvals', err);
+        setSyncResult({ error: 'sync_failed' });
+      } finally {
+        setSyncing(false);
+      }
     } catch (err) {
       alert('Failed to save whitelist');
     } finally {
@@ -95,6 +109,26 @@ export function WhitelistManager() {
           </button>
         </form>
       </div>
+
+      {(saving || syncing || syncResult) && (
+        <div className="bg-dark p-4 rounded-lg border border-gray-800">
+          <h3 className="text-sm font-semibold mb-2">Executor Contract Sync</h3>
+          {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
+          {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
+          {syncResult && !syncing && (
+            <div className="text-xs">
+              {syncResult.error ? (
+                <p className="text-danger flex items-center gap-1"><XCircle size={14} /> Sync failed</p>
+              ) : (
+                <div>
+                  <p className="text-success flex items-center gap-1 mb-1"><CheckCircle size={14} /> Sync complete</p>
+                  <pre className="text-gray-400 overflow-auto max-h-40">{JSON.stringify(syncResult.tokens || syncResult, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <div className="flex items-center justify-between mb-4">

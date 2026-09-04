@@ -721,6 +721,10 @@ app.post('/api/opportunities/scan', async (c) => {
   return forwardRequest(c, '/api/opportunities/scan', { body: body || {} });
 });
 
+app.post('/api/executor/sync-approvals', async (c) => {
+  return forwardRequest(c, '/api/executor/sync-approvals');
+});
+
 app.post('/api/spot-strategies/:id/execute', async (c) => {
   const id = c.req.param('id');
   return forwardRequest(c, `/api/spot-strategies/${id}/execute`);

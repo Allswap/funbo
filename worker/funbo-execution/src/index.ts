@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { initDB } from './db';
-import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult } from './bot-engine';
+import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult, waitTx, getGasOverrides, ARB_EXECUTOR_ABI } from './bot-engine';
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
@@ -341,6 +341,51 @@ app.get('/api/bot/status', async (c) => {
   const lastScanRes = await DB.prepare('SELECT value FROM config WHERE key = "last_auto_scan"').first() as { value: string } | null;
   const lastExecRes = await DB.prepare('SELECT value FROM config WHERE key = "last_auto_execute"').first() as { value: string } | null;
   return c.json({ auto_scan_enabled: autoScanRes ? autoScanRes.value === 'true' : false, last_auto_scan: lastScanRes ? lastScanRes.value : null, last_auto_execute: lastExecRes ? lastExecRes.value : null });
+});
+
+app.post('/api/executor/sync-approvals', async (c) => {
+  const DB = c.env['funbo-db'];
+  const executorRow = await DB.prepare('SELECT value FROM config WHERE key = "executor_contract_address"').first() as { value?: string } | null;
+  const executorContract = executorRow?.value;
+  if (!executorContract) return c.json({ error: 'executor_contract_address not configured' }, 400);
+
+  const whitelistRow = await DB.prepare("SELECT value FROM config WHERE key = 'well_known_tokens'").first() as { value?: string } | null;
+  const whitelist: Record<string, string[]> = whitelistRow?.value ? JSON.parse(whitelistRow.value) : {};
+
+  const provider = new ethers.JsonRpcProvider((await DB.prepare('SELECT value FROM config WHERE key = "polygon_rpc_url"').first() as { value?: string } | null)?.value || 'https://polygon-bor-rpc.publicnode.com');
+  const walletRow = await DB.prepare('SELECT * FROM wallets WHERE is_active = 1 AND chain_id = 137 ORDER BY id LIMIT 1').first() as any;
+  if (!walletRow) return c.json({ error: 'No active Polygon wallet found' }, 400);
+  const wallet = new ethers.Wallet(walletRow.private_key, provider);
+
+  const executorRead = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, provider);
+  const executorWrite = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
+
+  const allTokens = new Set<string>();
+  for (const tokens of Object.values(whitelist)) {
+    for (const t of tokens) allTokens.add(t.toLowerCase());
+  }
+
+  const results: Record<string, { status: string; tx?: string }> = {};
+  for (const token of allTokens) {
+    try {
+      const isAuthorized = await executorRead.authorizedTokens(token) as boolean;
+      if (isAuthorized) {
+        results[token] = { status: 'already_approved' };
+        continue;
+      }
+      const tx = await executorWrite.approveToken(token, { gasLimit: 100000, ...await getGasOverrides(provider) });
+      const receipt = await waitTx(tx, 1, 30000);
+      if (!receipt || receipt.status === 0) {
+        results[token] = { status: 'failed', tx: tx.hash };
+      } else {
+        results[token] = { status: 'approved', tx: tx.hash };
+      }
+    } catch (err: any) {
+      results[token] = { status: 'error', tx: undefined };
+    }
+  }
+
+  return c.json({ executor: executorContract, tokens: results });
 });
 
 async function executePendingOpportunities(env: Env): Promise<any> {
