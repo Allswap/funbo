@@ -11,12 +11,12 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
-    "axios": "^1.17.0",
-    "ethers": "^6.16.0",
-    "lucide-react": "^1.17.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "recharts": "^3.8.1"
+    "axios": "^1.20.0",
+    "ethers": "^6.17.0",
+    "lucide-react": "^1.41.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -33,6 +33,6 @@
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.60.1",
-    "vite": "^8.0.16"
+    "vite": "^8.2.2"
   }
 }
