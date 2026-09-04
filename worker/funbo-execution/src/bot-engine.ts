@@ -351,6 +351,7 @@ const ARB_EXECUTOR_ABI = [
   'function executeArb(address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut, bytes calldata dexData) returns (uint256 amountOut)',
   'function owner() view returns (address)',
   'function authorizedTokens(address) view returns (bool)',
+  'function approveToken(address token) external',
 ] as const;
 
 async function ensureWmaticBalance(
@@ -813,6 +814,34 @@ async function ensureAllowance(
   }
 }
 
+async function ensureExecutorApproval(
+  provider: ethers.Provider,
+  executorContractAddr: string,
+  token: string,
+  wallet: ethers.Wallet
+): Promise<void> {
+  try {
+    const executorRead = new ethers.Contract(executorContractAddr, ARB_EXECUTOR_ABI, provider);
+    const isAuthorized = await executorRead.authorizedTokens(token) as boolean;
+    if (isAuthorized) return;
+
+    console.log(`[executor] approving ${token.slice(0,10)} on ArbExecutor`);
+    const executorWrite = new ethers.Contract(executorContractAddr, ARB_EXECUTOR_ABI, wallet);
+    const tx = await executorWrite.approveToken(token, {
+      gasLimit: 100000,
+      ...await getGasOverrides(provider),
+    });
+    const receipt = await waitTx(tx, 1, 30000);
+    if (!receipt || receipt.status === 0) {
+      throw new Error(`Executor approveToken tx failed: ${tx.hash}`);
+    }
+    console.log(`[executor] approved ${token.slice(0,10)} tx=${tx.hash}`);
+  } catch (err: any) {
+    console.error(`[executor] ensureExecutorApproval error: ${err.message}`);
+    throw err;
+  }
+}
+
 async function executeSwap(
   env: Env,
   provider: ethers.Provider,
@@ -1262,6 +1291,8 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
+        await ensureExecutorApproval(provider, executorContract, fromToken, wallet);
+        await ensureExecutorApproval(provider, executorContract, toToken, wallet);
         const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
@@ -1497,6 +1528,8 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(from, ERC20_ABI, wallet);
+        await ensureExecutorApproval(provider, executorContract, from, wallet);
+        await ensureExecutorApproval(provider, executorContract, to, wallet);
         const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
@@ -1806,6 +1839,8 @@ export async function runBotStrategy(
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
+        await ensureExecutorApproval(provider, executorContract, fromToken, wallet);
+        await ensureExecutorApproval(provider, executorContract, toToken, wallet);
         const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
         if (allowance < amountInWei) {
           const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
