@@ -14,4 +14,5 @@ export {
   nownodesGetPrices, nownodesGetFiatRates,
   goplusBatchTokenSafety,
   createMoralisClient,
+  WELL_KNOWN_TOKENS,
 } from '../../shared/api-providers';

@@ -28,6 +28,20 @@ export function WhitelistManager() {
 
   const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchData, POLL_HEAVY);
 
+  const syncNow = async () => {
+    setSyncResult(null);
+    setSyncing(true);
+    try {
+      const res = await api.post('/api/executor/sync-approvals');
+      setSyncResult(res.data);
+    } catch (err) {
+      console.error('Failed to sync executor approvals', err);
+      setSyncResult({ error: 'sync_failed' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const persist = async (updated: Record<string, string[]>) => {
     setSaving(true);
     setSyncResult(null);
@@ -112,7 +126,14 @@ export function WhitelistManager() {
 
       {(saving || syncing || syncResult) && (
         <div className="bg-dark p-4 rounded-lg border border-gray-800">
-          <h3 className="text-sm font-semibold mb-2">Executor Contract Sync</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">Executor Contract Sync</h3>
+            <button onClick={syncNow} disabled={syncing}
+              className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-xs disabled:opacity-50">
+              {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+              Sync Now
+            </button>
+          </div>
           {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
           {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
           {syncResult && !syncing && (

@@ -1,6 +1,6 @@
 import { callWithRateLimit, isRateLimitError } from './rate-limiter';
 
-const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
+export const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
   137: new Set([
     '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', // WMATIC/WPOL
     '0x0000000000000000000000000000000000001010', // MATIC (native)

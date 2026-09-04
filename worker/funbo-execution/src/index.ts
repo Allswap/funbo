@@ -6,6 +6,7 @@ import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
 import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 import { isPolToken, POL_NATIVE, POL_WRAPPED } from '../../shared/aggregator';
+import { WELL_KNOWN_TOKENS } from './api-providers';
 import { scanBrtQuote } from './brt-quote';
 
 async function hashApiKey(apiKey: string): Promise<string> {
@@ -349,8 +350,13 @@ app.post('/api/executor/sync-approvals', async (c) => {
   const executorContract = executorRow?.value;
   if (!executorContract) return c.json({ error: 'executor_contract_address not configured' }, 400);
 
-  const whitelistRow = await DB.prepare("SELECT value FROM config WHERE key = 'well_known_tokens'").first() as { value?: string } | null;
-  const whitelist: Record<string, string[]> = whitelistRow?.value ? JSON.parse(whitelistRow.value) : {};
+  let whitelist: Record<string, string[]> = {};
+  try {
+    const whitelistRow = await DB.prepare("SELECT value FROM config WHERE key = 'well_known_tokens'").first() as { value?: string } | null;
+    whitelist = whitelistRow?.value ? JSON.parse(whitelistRow.value) : {};
+  } catch (err) {
+    return c.json({ error: 'Failed to parse well_known_tokens config', details: (err as Error).message }, 500);
+  }
 
   const provider = new ethers.JsonRpcProvider((await DB.prepare('SELECT value FROM config WHERE key = "polygon_rpc_url"').first() as { value?: string } | null)?.value || 'https://polygon-bor-rpc.publicnode.com');
   const walletRow = await DB.prepare('SELECT * FROM wallets WHERE is_active = 1 AND chain_id = 137 ORDER BY id LIMIT 1').first() as any;
@@ -362,6 +368,9 @@ app.post('/api/executor/sync-approvals', async (c) => {
 
   const allTokens = new Set<string>();
   for (const tokens of Object.values(whitelist)) {
+    for (const t of tokens) allTokens.add(t.toLowerCase());
+  }
+  for (const [chainId, tokens] of Object.entries(WELL_KNOWN_TOKENS)) {
     for (const t of tokens) allTokens.add(t.toLowerCase());
   }
 
