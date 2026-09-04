@@ -124,32 +124,31 @@ export function WhitelistManager() {
         </form>
       </div>
 
-      {(saving || syncing || syncResult) && (
-        <div className="bg-dark p-4 rounded-lg border border-gray-800">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold">Executor Contract Sync</h3>
-            <button onClick={syncNow} disabled={syncing}
-              className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-xs disabled:opacity-50">
-              {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-              Sync Now
-            </button>
-          </div>
-          {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
-          {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
-          {syncResult && !syncing && (
-            <div className="text-xs">
-              {syncResult.error ? (
-                <p className="text-danger flex items-center gap-1"><XCircle size={14} /> Sync failed</p>
-              ) : (
-                <div>
-                  <p className="text-success flex items-center gap-1 mb-1"><CheckCircle size={14} /> Sync complete</p>
-                  <pre className="text-gray-400 overflow-auto max-h-40">{JSON.stringify(syncResult.tokens || syncResult, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          )}
+      <div className="bg-dark p-4 rounded-lg border border-gray-800">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold">Executor Contract Sync</h3>
+          <button onClick={syncNow} disabled={syncing}
+            className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-xs disabled:opacity-50">
+            {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+            Sync Now
+          </button>
         </div>
-      )}
+        <p className="text-xs text-gray-500 mb-2">Syncs well-known tokens to ArbExecutor's on-chain allowlist. Run after deploy or if trades fail with "Token not approved".</p>
+        {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
+        {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
+        {syncResult && !syncing && (
+          <div className="text-xs">
+            {syncResult.error ? (
+              <p className="text-danger flex items-center gap-1"><XCircle size={14} /> Sync failed</p>
+            ) : (
+              <div>
+                <p className="text-success flex items-center gap-1 mb-1"><CheckCircle size={14} /> Sync complete</p>
+                <pre className="text-gray-400 overflow-auto max-h-40">{JSON.stringify(syncResult.tokens || syncResult, null, 2)}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">
         <div className="flex items-center justify-between mb-4">
