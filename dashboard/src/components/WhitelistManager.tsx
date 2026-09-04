@@ -34,9 +34,10 @@ export function WhitelistManager() {
     try {
       const res = await api.post('/api/executor/sync-approvals');
       setSyncResult(res.data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to sync executor approvals', err);
-      setSyncResult({ error: 'sync_failed' });
+      const detail = err?.response?.data?.error || err?.message || 'sync_failed';
+      setSyncResult({ error: detail });
     } finally {
       setSyncing(false);
     }
@@ -52,9 +53,10 @@ export function WhitelistManager() {
         setSyncing(true);
         const res = await api.post('/api/executor/sync-approvals');
         setSyncResult(res.data);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to sync executor approvals', err);
-        setSyncResult({ error: 'sync_failed' });
+        const detail = err?.response?.data?.error || err?.message || 'sync_failed';
+        setSyncResult({ error: detail });
       } finally {
         setSyncing(false);
       }
@@ -133,13 +135,13 @@ export function WhitelistManager() {
             Sync Now
           </button>
         </div>
-        <p className="text-xs text-gray-500 mb-2">Syncs well-known tokens to ArbExecutor's on-chain allowlist. Run after deploy or if trades fail with "Token not approved".</p>
+        <p className="text-xs text-gray-500 mb-2">Syncs well-known tokens to ArbExecutor's on-chain allowlist. Only works if the bot wallet is the contract owner. If trades fail with "Token not approved", ensure executor_mode is set to 'direct' in config to use direct swaps instead.</p>
         {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
         {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
         {syncResult && !syncing && (
           <div className="text-xs">
             {syncResult.error ? (
-              <p className="text-danger flex items-center gap-1"><XCircle size={14} /> Sync failed</p>
+                <p className="text-danger flex items-center gap-1"><XCircle size={14} /> {syncResult.error}</p>
             ) : (
               <div>
                 <p className="text-success flex items-center gap-1 mb-1"><CheckCircle size={14} /> Sync complete</p>

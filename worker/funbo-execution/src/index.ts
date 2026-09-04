@@ -390,7 +390,11 @@ app.post('/api/executor/sync-approvals', async (c) => {
         results[token] = { status: 'approved', tx: tx.hash };
       }
     } catch (err: any) {
-      results[token] = { status: 'error', tx: undefined };
+      const msg = err?.reason || err?.message || String(err);
+      results[token] = { status: 'error', error: msg.slice(0, 200) };
+      if (msg.includes('Unauthorized') || msg.includes('onlyOwner')) {
+        return c.json({ error: 'Wallet is not the ArbExecutor owner — cannot approve tokens', executor: executorContract, wallet: wallet.address, details: results }, 403);
+      }
     }
   }
 
