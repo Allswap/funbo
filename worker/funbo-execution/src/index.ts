@@ -374,7 +374,7 @@ app.post('/api/executor/sync-approvals', async (c) => {
     for (const t of tokens) allTokens.add(t.toLowerCase());
   }
 
-  const results: Record<string, { status: string; tx?: string }> = {};
+  const results: Record<string, { status: string; tx?: string; error?: string }> = {};
   for (const token of allTokens) {
     try {
       const isAuthorized = await executorRead.authorizedTokens(token) as boolean;

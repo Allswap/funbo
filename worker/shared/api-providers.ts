@@ -2,33 +2,31 @@ import { callWithRateLimit, isRateLimitError } from './rate-limiter';
 
 export const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
   137: new Set([
-    '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', // WMATIC/WPOL
     '0x0000000000000000000000000000000000001010', // MATIC (native)
+    '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', // WMATIC/WPOL
     '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', // USDC (Native)
     '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', // USDC.e (Bridged)
     '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT
     '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', // DAI
     '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619', // WETH
     '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6', // WBTC
-    '0xa3fa99a148fa48d14ed51d610c367c61876997f1', // miMATIC
-    '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', // SUSHI
-    '0xb33eaad8d922b1083446dc23f610c2567fb5180f', // UNI
     '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39', // LINK
     '0xd6df932a45c0f255f85145f286ea0b292b21c90b', // AAVE
-    '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // CRV
-    '0x3ba4c387f786bfee076a58914f5bd38d668b42c3', // BNB
-    '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', // SOL (Wormhole)
-    '0x06d02e9d62a13fc76bb229373fb3bbbd1101d2fc', // LEO
-    '0xb5c064f965edd4c86b888cc2e0e4dcbd6ee4e70f', // QUICK
-    '0xbbba073c3fbeca5f684c7664b40767582edcb7c6', // SAND
-    '0x0ffd9608223830edec42d8498c23fc48368dc4dc', // SCR
-    '0xb0897686c545042afc77c20201758a0b201b33a3', // LINK (PoS extra)
-    '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
-    '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT
-    '0xd6df932a45c0f255f85145f286ea0b292b21c90b', // AAVE
     '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', // SUSHI
     '0xb33eaad8d922b1083446dc23f610c2567fb5180f', // UNI
-    '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // CRV
+    '0x3ba4c387f786bfee076a58914f5bd38d668b42c3', // BNB
+    '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', // SOL (Wormhole)
+    '0x172370d5cd63279efa6d502dab29171933a610af', // CRV
+    '0xb5c064f955d8e7f38fe0460c556a72987494ee17', // QUICK
+    '0xbbba073c31bf03b8acf7c28ef0738decf3695683', // SAND
+    '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd', // wstETH
+    '0x3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4', // stMATIC (Lido)
+    '0xfa68fb4628dff1028cfec22b4162fccd0d45efb6', // MATICX (Stader)
+    '0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7', // GHST
+    '0x50b728d8d964fd00c2d0aad81718b71311fef68a', // SNX
+    '0x5fe2b58c013d7601147dcdd68c143a77499f5531', // GRT
+    '0x750e4c4984a9e0f12978ea6742bc1c5d248f40ed', // axlUSDC (Axelar)
+    '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
   ]),
   1: new Set([
     '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
