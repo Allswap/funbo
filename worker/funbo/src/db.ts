@@ -120,6 +120,20 @@ const MIGRATIONS = [
       );
     `
   },
+  {
+    id: '040_fix_quickswap_v3_router',
+    sql: `
+      UPDATE dex_routers SET
+        address = '0xf5b509Bb0909A69B1c207E495F687a596C168E12',
+        version = 'algebra',
+        quoter_address = '0xa15F0D7377B2A0C0c10db057f641beD21028FC89',
+        name = 'Quickswap V3 (Algebra)'
+      WHERE chain_id = 137 AND (
+        LOWER(address) = '0x6e2ac2092bc0b6e2d5b0bc6e7d8b0e7ab0c6d0e1'
+        OR (name LIKE 'Quickswap V3%' AND version = 'v3')
+      );
+    `
+  },
 ];
 
 const TABLE_SCHEMAS = [

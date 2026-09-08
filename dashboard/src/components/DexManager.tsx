@@ -27,7 +27,7 @@ export function DexManager() {
         chainId: parseInt(form.chainId),
         version: form.version,
       };
-      if (form.version === 'v3') {
+      if (form.version === 'v3' || form.version === 'algebra') {
         payload.quoterAddress = form.quoterAddress;
         payload.feeTiers = form.feeTiers;
       }
@@ -65,7 +65,7 @@ export function DexManager() {
             value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
 
           <div className="flex gap-2">
-            {['v2', 'v3', 'balancer', 'universal'].map(v => (
+            {['v2', 'v3', 'algebra', 'balancer', 'universal'].map(v => (
               <button key={v} type="button" onClick={() => setForm({ ...form, version: v, quoterAddress: '', feeTiers: '', poolId: '' })}
                 className={`flex-1 py-2 px-4 rounded font-bold text-sm transition-colors ${form.version === v ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
                 {v === 'balancer' ? 'BALANCER' : v === 'universal' ? 'UNIVERSAL' : v.toUpperCase()}
@@ -81,7 +81,7 @@ export function DexManager() {
             className="p-3 bg-gray-800 rounded border border-gray-700 focus:border-primary outline-none font-mono text-sm"
             value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} required />
 
-          {form.version === 'v3' && (
+          {(form.version === 'v3' || form.version === 'algebra') && (
             <>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Quoter Address</label>
@@ -172,7 +172,7 @@ export function DexManager() {
                     <td className="p-3 font-mono text-sm text-gray-400 truncate max-w-[140px]">{r.address}</td>
                     <td className="p-3 font-mono">{r.chain_id}</td>
                     <td className="p-3 text-xs text-gray-500 truncate max-w-[160px]">
-                      {r.version === 'v3' ? `${r.quoter_address?.slice(0, 10)}…` : '-'}
+                      {(r.version === 'v3' || r.version === 'algebra') ? `${r.quoter_address?.slice(0, 10)}…` : '-'}
                       {r.fee_tiers ? ` / ${r.fee_tiers}` : ''}
                     </td>
                     <td className="p-3">

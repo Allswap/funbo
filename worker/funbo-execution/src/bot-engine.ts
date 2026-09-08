@@ -303,6 +303,18 @@ const V3_ROUTER_ABI = [
   'function exactInput(ExactInputParams calldata) payable returns (uint256 amountOut)',
 ] as const;
 
+// Algebra (QuickSwap V3) router: same exactInput selector but the params struct has NO deadline.
+const ALGEBRA_ROUTER_ABI = [
+  'struct ExactInputParams { bytes path; address recipient; uint256 amountIn; uint256 amountOutMinimum; }',
+  'function exactInput(ExactInputParams calldata) payable returns (uint256 amountOut)',
+] as const;
+
+/** V3-family versions that quote via quoteExactInput on a quoter (Algebra = QuickSwap V3, one dynamic-fee pool per pair). */
+function isV3Family(version: string): boolean {
+  const v = (version || 'v2').toLowerCase();
+  return v === 'v3' || v === 'algebra';
+}
+
 const V3_QUOTER_ABI = [
   'function quoteExactInput(bytes memory path, uint256 amountIn) external returns (uint256 amountOut)',
 ] as const;
@@ -486,7 +498,7 @@ async function quoteAmountOut(
     return result ? { amountOut: result } : null;
   }
 
-  if (version === 'v3') {
+  if (isV3Family(version)) {
     const quoter = (router.quoter_address || '').trim();
     if (!quoter) return null;
     const tiers = [1000, 3000, 500, 10000, 100];
@@ -531,8 +543,8 @@ async function estimateGasCost(
     const sellVersion = (sellRouter.version || 'v2').toLowerCase();
 
     let estGas = 0n;
-    if (buyVersion === 'v3') estGas += 180000n; else estGas += 150000n;
-    if (sellVersion === 'v3') estGas += 180000n; else estGas += 150000n;
+    if (isV3Family(buyVersion)) estGas += 180000n; else estGas += 150000n;
+    if (isV3Family(sellVersion)) estGas += 180000n; else estGas += 150000n;
     estGas += 50000n;
 
     // Live gas price — Polygon EIP-1559 fee data, fallback to 60 gwei estimate only when unavailable
@@ -614,7 +626,7 @@ async function scanSameDexOpportunity(
 } | null> {
   const version = (router.version || 'v2').toLowerCase();
   
-  if (version !== 'v3') return null;
+  if (!isV3Family(version)) return null;
   
   const quoter = (router.quoter_address || '').trim();
   if (!quoter) return null;
@@ -917,7 +929,8 @@ async function executeSwapV3(
   routerAddress: string,
   quoterAddress: string,
   feeTier: number,
-  tokenInDecimals: number = 18
+  tokenInDecimals: number = 18,
+  isAlgebra: boolean = false
 ): Promise<ethers.TransactionResponse> {
   const amountInWei = ethers.parseUnits(amountIn, tokenInDecimals);
 
@@ -935,6 +948,18 @@ async function executeSwapV3(
   const ok = await ensureAllowance(provider, tokenContract, wallet.address, routerAddress, amountInWei);
   if (!ok) {
     throw new Error("Failed to set token allowance");
+  }
+
+  if (isAlgebra) {
+    // Algebra (QuickSwap V3): exactInput params have no deadline field.
+    const algebraRouter = new ethers.Contract(routerAddress, ALGEBRA_ROUTER_ABI, wallet);
+    const tx = await algebraRouter.exactInput({
+      path,
+      recipient: wallet.address,
+      amountIn: amountInWei,
+      amountOutMinimum: amountOutMin,
+    }, { gasLimit: 500000, ...await getGasOverrides(provider) }) as ethers.TransactionResponse;
+    return tx;
   }
 
   const v3Router = new ethers.Contract(routerAddress, V3_ROUTER_ABI, wallet);
@@ -1252,14 +1277,14 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
     router: any, version: string, fromDecimals: number
   ): Promise<ethers.TransactionResponse> {
     const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
-    if (tryContract && (version === 'v2' || version === 'v3')) {
+    if (tryContract && (version === 'v2' || isV3Family(version))) {
       try {
         const amountInWei = ethers.parseUnits(amountIn, fromDecimals);
         const quote = await quoteAmountOut(provider, fromToken, toToken, amountInWei, router, feeTier);
         const minOut = quote && quote.amountOut > 0n
           ? quote.amountOut * BigInt(Math.floor((100 - slippage) * 100)) / 10000n
           : 0n;
-        const v = version === 'v3' ? 1 : 0;
+        const v = isV3Family(version) ? 1 : 0;
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
@@ -1285,10 +1310,10 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
         }
       }
     }
-    if (version === 'v3') {
+    if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
-      return executeSwapV3(env, provider, wallet, fromToken, toToken, amountIn, slippage, router.address, quoterAddr, feeTier, fromDecimals);
+      return executeSwapV3(env, provider, wallet, fromToken, toToken, amountIn, slippage, router.address, quoterAddr, feeTier, fromDecimals, version === 'algebra');
     } else if (version === 'balancer') {
       const poolId = router.fee_tiers || '';
       return executeSwapBalancer(env, provider, wallet, fromToken, toToken, amountIn, router.address, poolId, slippage);
@@ -1490,11 +1515,11 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
     const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
     if (tryContract) {
       try {
-        if (version !== 'v2' && version !== 'v3') {
+        if (version !== 'v2' && version !== 'v3' && version !== 'algebra') {
           throw new Error(`Contract mode does not support version: ${version}`);
         }
         const amountInWei = ethers.parseUnits(amount, decimals);
-        const v = version === 'v3' ? 1 : 0;
+        const v = isV3Family(version) ? 1 : 0;
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(from, ERC20_ABI, wallet);
@@ -1524,16 +1549,28 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
         }
       }
     }
-    if (version === 'v3') {
+    if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
       const path = encodeV3Path([from, to], [feeTier]);
+      const amountInWei = ethers.parseUnits(amount, decimals);
+      const overrides = { gasLimit: 500000, ...await getGasOverrides(provider) };
+      const quoter = new ethers.Contract(quoterAddr, V3_QUOTER_ABI, provider);
+      const quotedOut = await quoter.quoteExactInput.staticCall(path, amountInWei) as bigint;
+      if (quotedOut === 0n) throw new Error('Zero output from V3 quoter');
+      const minOut = quotedOut * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
+      if (version === 'algebra') {
+        const routerContract = new ethers.Contract(router.address, ALGEBRA_ROUTER_ABI, wallet);
+        return await routerContract.exactInput(
+          { path, recipient: wallet.address, amountIn: amountInWei, amountOutMinimum: minOut },
+          overrides
+        ) as ethers.TransactionResponse;
+      }
       const deadline = await getBlockchainDeadline(provider);
       const routerContract = new ethers.Contract(router.address, V3_ROUTER_ABI, wallet);
-      const minOut = ethers.parseUnits(amount, decimals) * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
       const tx = await routerContract.exactInput(
-        { path, recipient: wallet.address, deadline, amountIn: ethers.parseUnits(amount, decimals), amountOutMinimum: minOut },
-        { gasLimit: 500000, ...await getGasOverrides(provider) }
+        { path, recipient: wallet.address, deadline, amountIn: amountInWei, amountOutMinimum: minOut },
+        overrides
       ) as ethers.TransactionResponse;
       return tx;
 
@@ -1795,7 +1832,7 @@ export async function runBotStrategy(
     const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
     if (tryContract) {
       try {
-        if (version !== 'v2' && version !== 'v3') {
+        if (version !== 'v2' && version !== 'v3' && version !== 'algebra') {
           throw new Error(`Contract mode does not support version: ${version}`);
         }
         const amountInWei = ethers.parseUnits(amountIn, fromDecimals);
@@ -1803,7 +1840,7 @@ export async function runBotStrategy(
         const minOut = quote && quote.amountOut > 0n
           ? quote.amountOut * BigInt(Math.floor((100 - sp.optimal) * 100)) / 10000n
           : 0n;
-        const v = version === 'v3' ? 1 : 0;
+        const v = isV3Family(version) ? 1 : 0;
         const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
         const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
         const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
@@ -1829,12 +1866,12 @@ export async function runBotStrategy(
         }
       }
     }
-    if (version === 'v3') {
+    if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error("V3 router missing quoter_address");
       const winningFeeTier = arb!.amountOutA > arb!.amountOutB ? arb!.feeTierA : arb!.feeTierB;
       const feeTier = winningFeeTier ?? defaultFeeTier;
-      return executeSwapV3(env, provider, wallet, fromToken, toToken, amountIn, sp.optimal, router.address, quoterAddr, feeTier, fromDecimals);
+      return executeSwapV3(env, provider, wallet, fromToken, toToken, amountIn, sp.optimal, router.address, quoterAddr, feeTier, fromDecimals, version === 'algebra');
     } else if (version === 'balancer') {
       const poolId = router.fee_tiers || '';
       if (!poolId) throw new Error("Balancer router missing pool_id in fee_tiers");
@@ -2074,7 +2111,7 @@ export async function executeSoloSpotFromOpp(
   const minSlippagePct = minSlipRes ? parseFloat(minSlipRes.value) : 0.5;
 
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(opp.chain_id).all() as { results: RouterConfig[] };
-  const validRouters = routers.results.filter((r: RouterConfig) => r.address && (r.version === 'v3' ? !!r.quoter_address : true));
+  const validRouters = routers.results.filter((r: RouterConfig) => r.address && (isV3Family(r.version || 'v2') ? !!r.quoter_address : true));
   if (validRouters.length < 2) return { success: false, strategy: 'solo_spot', tokenA: opp.token_a, tokenB: opp.token_b, amountIn: '0', amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'Need at least 2 valid routers' };
 
   const pairToken = opp.token_a;
@@ -2445,7 +2482,7 @@ export async function executeMMRebalance(
   const wallet = new ethers.Wallet(env.PRIVATE_KEY!, getMevProtectedProvider(env, network));
 
   const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(network.chain_id).all() as { results: any[] };
-  const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? !!r.quoter_address : true));
+  const validRouters = routers.results.filter((r: any) => r.address && ((r.version === 'v3' || r.version === 'algebra') ? !!r.quoter_address : true));
   if (validRouters.length === 0) return { success: false, strategy: 'mm_rebalance', tokenA: opp.token_a, tokenB: opp.token_b, amountIn: '0', amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'No valid routers' };
 
   const router = validRouters[0];
@@ -2488,10 +2525,10 @@ export async function executeMMRebalance(
       const kyberResp = await executeKyberSwap(provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, brtDecimals);
       txHash = kyberResp.hash;
       await waitTx(kyberResp, 1, 30000);
-    } else if (version === 'v3') {
+    } else if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
-      const swapResp = await executeSwapV3(env, provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, router.address, quoterAddr, defaultFeeTier);
+      const swapResp = await executeSwapV3(env, provider, wallet, tokenIn, tokenOut, tradeAmount, effectiveSlippage, router.address, quoterAddr, defaultFeeTier, 18, version === 'algebra');
       txHash = swapResp.hash;
       await waitTx(swapResp, 1, 30000);
     } else {

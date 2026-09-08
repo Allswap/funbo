@@ -82,7 +82,9 @@ export async function rawQuoteRouteAmount(rpcUrl: string, tokenA: string, tokenB
     const tA = pathToken(tokenA);
     const tB = pathToken(tokenB);
     const version = (router.version || 'v2').toLowerCase();
-    if (version === 'v3') {
+    if (version === 'v3' || version === 'algebra') {
+      // Both Uniswap V3 and Algebra (QuickSwap V3) quote via quoteExactInput(bytes,uint256);
+      // Algebra ignores the path fee byte (one dynamic-fee pool per pair) so tier probing is safe.
       const quoter = (router.quoter_address || '').trim();
       let bestOut: bigint | null = null;
       for (const ft of V3_FEE_TIERS) {

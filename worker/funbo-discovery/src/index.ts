@@ -106,7 +106,8 @@ const KNOWN_DEX_ROUTERS: Record<string, { name: string; address: string; version
   ],
   '137': [
     { name: 'Quickswap V2', address: '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff', version: 'v2' },
-    { name: 'Quickswap V3', address: '0x6e2aC2092bC0B6e2D5B0bC6e7d8B0E7aB0c6D0E1', version: 'v3', quoter_address: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' },
+    { name: 'Quickswap V3', address: '0xf5b509bB0909a69B1c207E495F687a596C168E12', version: 'algebra', quoter_address: '0xa15F0D7377B2A0C0c10db057f641beD21028FC89' },
+    { name: 'Dfyn V2', address: '0xA102072A4C07F06EC3B4900FDC4C7B80b6c57429', version: 'v2' },
     { name: 'Uniswap V3', address: '0xE592427A0AEce92De3Edee1F18E0157C05861564', version: 'v3', quoter_address: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' },
     { name: 'SushiSwap V2', address: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506', version: 'v2' },
   ],
@@ -628,7 +629,7 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
       const rpcUrl = await getWorkingRpcUrl(env, net.chain_id, net.rpc_url);
 
       const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(strat.chain_id).all() as { results: any[] };
-      const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? !!r.quoter_address : true));
+      const validRouters = routers.results.filter((r: any) => r.address && ((r.version === 'v3' || r.version === 'algebra') ? !!r.quoter_address : true));
       if (validRouters.length < 2) continue;
 
       const stratDecimals = await getTokenDecimals(rpcUrl, strat.token_address, strat.chain_id, env);
@@ -710,7 +711,7 @@ async function scanMMStrategies(DB: any, networks: any[], env: any): Promise<voi
       const rpcUrl = await getWorkingRpcUrl(env, net.chain_id, net.rpc_url);
 
       const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(cfg.chain_id).all() as { results: any[] };
-      const validRouters = routers.results.filter((r: any) => r.address && (r.version === 'v3' ? !!r.quoter_address : true));
+      const validRouters = routers.results.filter((r: any) => r.address && ((r.version === 'v3' || r.version === 'algebra') ? !!r.quoter_address : true));
       if (validRouters.length === 0) continue;
 
       const pairRows = await DB.prepare(
