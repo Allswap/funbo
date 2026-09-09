@@ -1138,19 +1138,20 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
             if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
 
             // Pick the router that gives MORE B (cheaper to buy B)
-            const buyRouter = quoteA > quoteB ? routers.results[j] : routers.results[i];
+            const buyRouter = quoteA > quoteB ? routers.results[i] : routers.results[j];
             const buyOutput = quoteA > quoteB ? quoteA : quoteB;
+            const sellRouterAddr = buyRouter === routers.results[i] ? routers.results[j] : routers.results[i];
 
             // Verify round-trip: sell that B back for A on the OTHER router
-            const reverseQuote = await rawQuoteRouteAmount(_rpcUrl, pair.token_b, pair.token_a, buyRouter === routers.results[i] ? routers.results[j] : routers.results[i], 3000, buyOutput, env);
+            const reverseQuote = await rawQuoteRouteAmount(_rpcUrl, pair.token_b, pair.token_a, sellRouterAddr, 3000, buyOutput, env);
             if (!reverseQuote || reverseQuote === 0n) continue;
 
             const profitPct = Number((reverseQuote - scanAmountIn) * 10000n / scanAmountIn) / 100;
             if (profitPct < minProfitPctCrossDex || profitPct < scanCostBufferPct + minProfitPctCrossDex) continue;
-            const sellRouter = buyRouter === routers.results[i] ? routers.results[j] : routers.results[i];
+            const sellRouterObj = buyRouter === routers.results[i] ? routers.results[j] : routers.results[i];
             const tradeAmountRes = await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() as { value: string } | null;
             const amountIn = tradeAmountRes?.value || '1.0';
-            await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")').bind(net.chain_id, buyRouter.address, sellRouter.address, pair.token_a, pair.token_b, amountIn, profitPct).run();
+            await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")').bind(net.chain_id, buyRouter.address, sellRouterObj.address, pair.token_a, pair.token_b, amountIn, profitPct).run();
             inserted++;
             routerPairsDone++;
             workDone++;
