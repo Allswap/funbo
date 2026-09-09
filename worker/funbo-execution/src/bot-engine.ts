@@ -2477,7 +2477,7 @@ export async function executeMMRebalance(
 
 
 // Flash loan arb contract on Polygon
-const FLASH_LOAN_ARB = '0x0000000000000000000000000000000000000000'; // Set after deployment
+const FLASH_LOAN_ARB = '0x205d93c618AE9Ce01E963eba6e97d022235dceBe'; // Set after deployment
 
 export async function tryFlashLoanArb(
   env: Env, network: NetworkConfig, tokenBorrow: string, amount: string,
@@ -2485,7 +2485,6 @@ export async function tryFlashLoanArb(
 ): Promise<{ success: boolean; txHash: string | null; errorMsg: string | null }> {
   const { provider } = await getWorkingProvider(env, network.rpc_url, '', null, network.chain_id);
   const wallet = new ethers.Wallet(env.PRIVATE_KEY!, provider);
-  if (FLASH_LOAN_ARB === '0x0000000000000000000000000000000000000000') return { success: false, txHash: null, errorMsg: 'FlashLoanArb not deployed' };
   const fla = new ethers.Contract(FLASH_LOAN_ARB, ['function executeFlashLoan(address tokenBorrow, uint256 amount, address tokenSwap, address routerBuy, address routerSell, uint256 minProfit) external'], wallet);
   try {
     const amountWei = ethers.parseUnits(amount, 18);
