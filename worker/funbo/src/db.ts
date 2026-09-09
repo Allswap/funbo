@@ -176,6 +176,21 @@ const MIGRATIONS = [
       DELETE FROM config WHERE key LIKE 'rpc_403_blocklist:%';
     `
   },
+  {
+    id: '042_remove_executor_config_live_verify',
+    sql: `
+      -- Sep 10: ArbExecutor contract fully removed from code (79f7a0f) — drop the orphaned
+      -- executor_* config rows (nothing reads them anymore; direct wallet->router is the only mode).
+      DELETE FROM config WHERE key IN ('executor_mode', 'executor_contract_address');
+
+      -- Live registry verification defaults: discovery revalidates dex_routers/token_pairs against
+      -- the chain on a TTL (eth_getCode) so the curated D1 registry self-heals from live data.
+      -- INSERT OR IGNORE = never clobber operator-set values.
+      INSERT OR IGNORE INTO config (key, value) VALUES ('registry_verify_enabled', 'true');
+      INSERT OR IGNORE INTO config (key, value) VALUES ('registry_verify_interval_min', '30');
+      INSERT OR IGNORE INTO config (key, value) VALUES ('registry_verify_pairs_per_run', '5');
+    `
+  },
 ];
 
 const TABLE_SCHEMAS = [

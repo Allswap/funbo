@@ -77,6 +77,104 @@ function buildPolPreferredPairs(pairs: any[]): PreferredPair[] {
   return [...byPartner.values()].map(({ polSide: _ps, ...rest }) => rest);
 }
 
+// --- Live registry verification: revalidate the D1 router/pair cache against the chain on a TTL ---
+// dex_routers / token_pairs are a CURATED cache; this pass pulls liveness straight from the chain
+// (eth_getCode) so dead/placeholder addresses are auto-pruned and nothing stale feeds the scanners.
+// Budgeted to stay inside the free-plan 50-subrequest cap: routers are always re-checked (≈7 calls),
+// pairs round-robin in chunks (registry_verify_pairs_per_run) across runs.
+async function getConfigStr(DB: any, key: string, fallback: string): Promise<string> {
+  const row = await DB.prepare('SELECT value FROM config WHERE key = ?').bind(key).first() as { value?: string } | null;
+  return row?.value != null && row.value !== '' ? row.value : fallback;
+}
+
+function codeIsLive(code: string | null | undefined): boolean {
+  return !!code && code !== '0x' && code !== '0x0';
+}
+
+// A quoter/contract address is only usable when it's a real hex address, not '' / '0x' / '0x0'.
+function isAddressUsable(addr: any): boolean {
+  const a = (addr || '').trim().toLowerCase();
+  return a !== '' && a !== '0x' && a !== '0x0';
+}
+
+// eth_getCode via rawEthCall(rpc, addr, '0x'): returns deployed bytecode hex; EOA returns '0x'.
+async function liveCodeCheck(rpcUrl: string, address: string, env: any): Promise<boolean> {
+  try {
+    return codeIsLive(await rawEthCall(rpcUrl, address, '0x', env));
+  } catch {
+    return false;
+  }
+}
+
+async function liveVerifyRegistry(
+  DB: any, env: Env, chainId: number, force: boolean = false
+): Promise<{ routersChecked: number; routersDeactivated: number; pairsChecked: number; pairsDeactivated: number; skipped: boolean }> {
+  const empty = { routersChecked: 0, routersDeactivated: 0, pairsChecked: 0, pairsDeactivated: 0, skipped: true };
+  try {
+    if ((await getConfigStr(DB, 'registry_verify_enabled', 'true')).toLowerCase() !== 'true') return empty;
+    const intervalMin = parseInt(await getConfigStr(DB, 'registry_verify_interval_min', '30')) || 30;
+    if (intervalMin <= 0) return empty;
+    if (!force) {
+      // TTL gate so concurrent crons (spot, cross-dex shards) and GH/cron-job.org overlap only run one pass.
+      if (!(await dedupCronRun(DB, 'registry_verify', intervalMin))) return empty;
+    } else {
+      // Force path (manual endpoint): still record the run so the next scheduled pass waits the TTL.
+      const nowSec = String(Math.floor(Date.now() / 1000));
+      await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
+        .bind('last_cron:registry_verify', nowSec, nowSec).run();
+    }
+
+    const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
+    const net = networks.results.find((n: any) => n.chain_id === chainId);
+    if (!net?.rpc_url) return empty;
+    const rpcUrl = await getWorkingRpcUrl(env, chainId, net.rpc_url);
+    if (!rpcUrl) return empty;
+
+    let routersChecked = 0, routersDeactivated = 0, pairsChecked = 0, pairsDeactivated = 0;
+
+    // 1) Routers — must have deployed bytecode; V3/Algebra additionally needs a quoter_address.
+    const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(chainId).all() as { results: any[] };
+    for (const r of routers.results) {
+      routersChecked++;
+      const alive = await liveCodeCheck(rpcUrl, r.address, env);
+      const missingQuoter = ((r.version === 'v3' || r.version === 'algebra') && !isAddressUsable(r.quoter_address));
+      if (!alive || missingQuoter) {
+        await DB.prepare('UPDATE dex_routers SET is_active = 0 WHERE id = ?').bind(r.id).run();
+        routersDeactivated++;
+        console.log(`[live-verify] router deactivated: ${r.name} ${String(r.address).slice(0, 10)} (${!alive ? 'no contract code' : 'v3/algebra missing quoter'})`);
+      }
+    }
+
+    // 2) Pairs — both token contracts must exist on-chain; chunked round-robin via a config cursor.
+    const pairsPerRun = Math.max(1, parseInt(await getConfigStr(DB, 'registry_verify_pairs_per_run', '5')) || 5);
+    const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1 ORDER BY id').bind(chainId).all() as { results: any[] };
+    const n = pairs.results.length;
+    if (n > 0) {
+      const cursorRow = await DB.prepare('SELECT value FROM config WHERE key = "registry_verify_cursor"').first() as { value: string } | null;
+      let cursor = cursorRow && parseInt(cursorRow.value) > 0 ? parseInt(cursorRow.value) : 0;
+      cursor = cursor % n;
+      for (let i = 0; i < Math.min(pairsPerRun, n); i++) {
+        const p = pairs.results[(cursor + i) % n];
+        pairsChecked++;
+        if (!(await liveCodeCheck(rpcUrl, p.token_a, env)) || !(await liveCodeCheck(rpcUrl, p.token_b, env))) {
+          await DB.prepare('UPDATE token_pairs SET is_active = 0 WHERE id = ?').bind(p.id).run();
+          pairsDeactivated++;
+          console.log(`[live-verify] pair deactivated: ${p.label || `${String(p.token_a).slice(0, 8)}/${String(p.token_b).slice(0, 8)}`} (token contract missing)`);
+        }
+      }
+      const nextCursor = (cursor + pairsPerRun) % n;
+      await DB.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
+        .bind('registry_verify_cursor', String(nextCursor), String(nextCursor)).run();
+    }
+
+    console.log(`[live-verify] chain=${chainId} routers=${routersChecked} (${routersDeactivated} off) pairs=${pairsChecked} (${pairsDeactivated} off)`);
+    return { routersChecked, routersDeactivated, pairsChecked, pairsDeactivated, skipped: false };
+  } catch (e) {
+    console.error('[live-verify] failed:', e);
+    return empty;
+  }
+}
+
 // Notify the execution worker the moment new opportunities exist so the opp→execution gap is ~ms
 // (no waiting for the next 5m execute cron). Reuses the caller's Cron API key (forwarded header).
 async function triggerInlineExecution(env: any, apiKey?: string | null): Promise<void> {
@@ -515,6 +613,11 @@ app.post('/api/scan', async (c) => {
   return c.json({ success: true, scanType, triggered: 'external' });
 });
 
+
+app.post('/api/registry/verify', async (c) => {
+  // Force-run the live registry verification pass (routers + chunked pairs) against the chain.
+  return c.json(await liveVerifyRegistry(c.env['funbo-db'], c.env, 137, true));
+});
 
 app.post('/api/cron/spot-strategies', async (c) => {
   const DB = c.env['funbo-db'];
@@ -979,6 +1082,9 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
   const costMap = Object.fromEntries(costCfg.results.map((r: any) => [r.key, r.value]));
   const scanCostBufferPct = parseFloat(costMap.scan_cost_buffer_pct || '2.0'); // slippage 1% + LP fee 0.3% + gas ~0.7%
 
+  // Pull registry liveness from the chain first (TTL-gated) so dead routers/pairs never feed this scan.
+  await liveVerifyRegistry(DB, env, 137);
+
   for (const net of networks) {
     const routers = await DB.prepare('SELECT * FROM dex_routers WHERE chain_id = ? AND is_active = 1').bind(net.chain_id).all() as { results: any[] };
     const pairs = await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(net.chain_id).all() as { results: any[] };
@@ -1079,6 +1185,8 @@ async function runSpotStrategiesScan(DB: any, polygon: any[], env: any) {
     const active = await getActiveStrategies(DB);
     const poly = polygon.filter((n: any) => n.chain_id === 137);
     if (poly.length === 0) { console.log('[cron] no active Polygon network — skip'); return; }
+    // Revalidate the registry against the chain (TTL-gated; shares the gate with cross-dex scans).
+    await liveVerifyRegistry(DB, env, 137);
     if (strategyEnabled(active, 'solo_spot')) await scanSoloSpotStrategies(DB, poly, env);
     if (strategyEnabled(active, 'spot')) await scanSpotStrategies(DB, poly, env);
     if (strategyEnabled(active, 'mm')) await scanMMStrategies(DB, poly, env);
