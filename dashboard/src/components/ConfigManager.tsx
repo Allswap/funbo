@@ -32,8 +32,6 @@ export function ConfigManager() {
     auto_discover_enabled: 'false',
     auto_discover_source: 'gecko',
     auto_discover_interval: '',
-    executor_contract_address: '',
-    executor_mode: 'direct',
   });
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -332,32 +330,7 @@ export function ConfigManager() {
         </div>
 
         <div className="md:col-span-2 bg-darker p-4 rounded border border-purple-900/50">
-          <h3 className="font-bold text-lg text-purple-400 mb-3">Executor & Auto-Discovery</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Executor Contract Address</label>
-              <input value={config.executor_contract_address || ''}
-                onChange={e => handleChange('executor_contract_address', e.target.value)}
-                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none font-mono text-xs"
-                placeholder="0x..." />
-              <p className="text-xs text-gray-500 mt-1">ArbExecutor.sol address on Polygon. Leave empty for worker-only mode.</p>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Executor Mode</label>
-              <select value={config.executor_mode}
-                onChange={e => handleChange('executor_mode', e.target.value)}
-                className="w-full p-3 bg-gray-800 rounded border border-gray-700 focus:border-purple-400 outline-none">
-                <option value="direct">Worker Only (wallet signs tx directly)</option>
-                <option value="contract">Contract Only (ArbExecutor.sol handles swap)</option>
-                <option value="become">Contract → Worker (try contract, fallback to direct)</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                <span className="text-purple-400">Worker Only</span> — Worker signs directly via its wallet key.<br />
-                <span className="text-purple-400">Contract Only</span> — Worker calls ArbExecutor contract which executes the swap on-chain.<br />
-                <span className="text-purple-400">Contract → Worker</span> — Tries contract first; if it reverts, falls back to direct signing.
-              </p>
-            </div>
-          </div>
+          <h3 className="font-bold text-lg text-purple-400 mb-3">Auto-Discovery</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-2">Auto-Discover</label>

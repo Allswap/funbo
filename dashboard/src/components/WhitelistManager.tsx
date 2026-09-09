@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { configService, networkService } from '../api/client';
-import { api } from '../api/client';
-import { Plus, Trash2, Loader2, RefreshCw, Power, Shield, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, Power, Shield } from 'lucide-react';
 import { useAutoPoll, POLL_HEAVY } from '../hooks/useAutoPoll';
 
 export function WhitelistManager() {
@@ -9,8 +8,6 @@ export function WhitelistManager() {
   const [networks, setNetworks] = useState<any[]>([]);
   const [form, setForm] = useState({ chainId: '', address: '', label: '' });
   const [saving, setSaving] = useState(false);
-  const [syncResult, setSyncResult] = useState<any>(null);
-  const [syncing, setSyncing] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -28,38 +25,11 @@ export function WhitelistManager() {
 
   const { loading, isPolling, refetch, togglePolling } = useAutoPoll(fetchData, POLL_HEAVY);
 
-  const syncNow = async () => {
-    setSyncResult(null);
-    setSyncing(true);
-    try {
-      const res = await api.post('/api/executor/sync-approvals');
-      setSyncResult(res.data);
-    } catch (err: any) {
-      console.error('Failed to sync executor approvals', err);
-      const detail = err?.response?.data?.error || err?.message || 'sync_failed';
-      setSyncResult({ error: detail });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const persist = async (updated: Record<string, string[]>) => {
     setSaving(true);
-    setSyncResult(null);
     try {
       await configService.set('well_known_tokens', JSON.stringify(updated));
       setConfigTokens(updated);
-      try {
-        setSyncing(true);
-        const res = await api.post('/api/executor/sync-approvals');
-        setSyncResult(res.data);
-      } catch (err: any) {
-        console.error('Failed to sync executor approvals', err);
-        const detail = err?.response?.data?.error || err?.message || 'sync_failed';
-        setSyncResult({ error: detail });
-      } finally {
-        setSyncing(false);
-      }
     } catch (err) {
       alert('Failed to save whitelist');
     } finally {
@@ -124,32 +94,6 @@ export function WhitelistManager() {
             <Plus size={20} /> Add to Whitelist
           </button>
         </form>
-      </div>
-
-      <div className="bg-dark p-4 rounded-lg border border-gray-800">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold">Executor Contract Sync</h3>
-          <button onClick={syncNow} disabled={syncing}
-            className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-xs disabled:opacity-50">
-            {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            Sync Now
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 mb-2">Syncs well-known tokens to ArbExecutor's on-chain allowlist. Only works if the bot wallet is the contract owner. If trades fail with "Token not approved", ensure executor_mode is set to 'direct' in config to use direct swaps instead.</p>
-        {saving && <p className="text-sm text-yellow-400">Saving whitelist to D1...</p>}
-        {syncing && <p className="text-sm text-yellow-400 flex items-center"><Loader2 className="animate-spin mr-2" size={14} /> Syncing approvals on-chain...</p>}
-        {syncResult && !syncing && (
-          <div className="text-xs">
-            {syncResult.error ? (
-                <p className="text-danger flex items-center gap-1"><XCircle size={14} /> {syncResult.error}</p>
-            ) : (
-              <div>
-                <p className="text-success flex items-center gap-1 mb-1"><CheckCircle size={14} /> Sync complete</p>
-                <pre className="text-gray-400 overflow-auto max-h-40">{JSON.stringify(syncResult.tokens || syncResult, null, 2)}</pre>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="bg-dark p-6 rounded-lg border border-gray-800">

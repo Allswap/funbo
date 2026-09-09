@@ -722,7 +722,7 @@ app.post('/api/opportunities/scan', async (c) => {
 });
 
 app.post('/api/executor/sync-approvals', async (c) => {
-  return forwardRequest(c, '/api/executor/sync-approvals');
+  return c.json({ error: 'ArbExecutor contract mode removed — executor_mode is always direct (wallet → router swaps)' }, 410);
 });
 
 app.post('/api/spot-strategies/:id/execute', async (c) => {

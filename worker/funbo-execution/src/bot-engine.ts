@@ -359,13 +359,6 @@ const WMATIC_ABI = [
   'function deposit() payable',
 ] as const;
 
-export const ARB_EXECUTOR_ABI = [
-  'function executeArb(address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut, bytes calldata dexData) returns (uint256 amountOut)',
-  'function owner() view returns (address)',
-  'function authorizedTokens(address) view returns (bool)',
-  'function approveToken(address token) external',
-] as const;
-
 async function ensureWmaticBalance(
   wallet: ethers.Wallet,
   provider: ethers.Provider,
@@ -1261,12 +1254,7 @@ export async function executeOpportunity(
     return { success: false, strategy: 'arb', tokenA, tokenB, amountIn: '0', amountOut: '0', profitPct: grossProfitPct, status: 'skipped', txHash: null, errorMsg: `Net profit ${netProfitPct.toFixed(3)}% < ${minNetProfitPct}%` };
   }
 
-  const executorContractRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_contract_address"').first() as { value: string } | null;
-  const executorModeRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_mode"').first() as { value: string } | null;
-  const executorContract = executorContractRes?.value || '';
-  const executorMode = executorModeRes?.value || 'direct';
-
-const beforeState = await getWalletState(provider, wallet.address, tokenA, tokenB);
+  const beforeState = await getWalletState(provider, wallet.address, tokenA, tokenB);
    let txHash: string | null = null;
 
    const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
@@ -1276,40 +1264,6 @@ const beforeState = await getWalletState(provider, wallet.address, tokenA, token
     fromToken: string, toToken: string, amountIn: string, slippage: number,
     router: any, version: string, fromDecimals: number
   ): Promise<ethers.TransactionResponse> {
-    const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
-    if (tryContract && (version === 'v2' || isV3Family(version))) {
-      try {
-        const amountInWei = ethers.parseUnits(amountIn, fromDecimals);
-        const quote = await quoteAmountOut(provider, fromToken, toToken, amountInWei, router, feeTier);
-        const minOut = quote && quote.amountOut > 0n
-          ? quote.amountOut * BigInt(Math.floor((100 - slippage) * 100)) / 10000n
-          : 0n;
-        const v = isV3Family(version) ? 1 : 0;
-        const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
-        const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
-        const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
-        const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
-        if (allowance < amountInWei) {
-          const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
-            gasLimit: 100000,
-            ...await getGasOverrides(provider),
-          });
-          const appReceipt = await waitTx(appTx, 1, 30000);
-          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
-        }
-        const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
-          gasLimit: 500000,
-          ...await getGasOverrides(provider),
-        }) as ethers.TransactionResponse;
-        return tx;
-      } catch (err) {
-        if (executorMode === 'become') {
-          console.warn('Contract leg failed, falling back to direct:', err);
-        } else {
-          throw err;
-        }
-      }
-    }
     if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
@@ -1506,49 +1460,7 @@ const dA = await getTokenDecimals(provider, tokenA, network.chain_id);
     return { success: false, strategy: 'triangular', tokenA, tokenB, amountIn: tradeAmountStr, amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'Triangle not profitable at execution time' };
   }
 
-  const executorContractRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_contract_address"').first() as { value: string } | null;
-  const executorModeRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_mode"').first() as { value: string } | null;
-  const executorContract = executorContractRes?.value || '';
-  const executorMode = executorModeRes?.value || 'direct';
-
   async function triExecuteLeg(from: string, to: string, amount: string, decimals: number): Promise<ethers.TransactionResponse> {
-    const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
-    if (tryContract) {
-      try {
-        if (version !== 'v2' && version !== 'v3' && version !== 'algebra') {
-          throw new Error(`Contract mode does not support version: ${version}`);
-        }
-        const amountInWei = ethers.parseUnits(amount, decimals);
-        const v = isV3Family(version) ? 1 : 0;
-        const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
-        const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
-        const tokenContract = new ethers.Contract(from, ERC20_ABI, wallet);
-        const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
-        if (allowance < amountInWei) {
-          const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
-            gasLimit: 100000,
-            ...await getGasOverrides(provider),
-          });
-          const appReceipt = await waitTx(appTx, 1, 30000);
-          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
-        }
-        const quote = await quoteAmountOut(provider, from, to, amountInWei, router, feeTier);
-        const minOut = quote && quote.amountOut > 0n
-          ? quote.amountOut * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n
-          : 0n;
-        const tx = await arbContract.executeArb(from, to, amountInWei, minOut, dexData, {
-          gasLimit: 500000,
-          ...await getGasOverrides(provider),
-        }) as ethers.TransactionResponse;
-        return tx;
-      } catch (err) {
-        if (executorMode === 'become') {
-          console.warn('Contract leg failed, falling back to direct:', err);
-        } else {
-          throw err;
-        }
-      }
-    }
     if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error('V3 router missing quoter');
@@ -1806,11 +1718,6 @@ export async function runBotStrategy(
   const buyRouterAddr = arb.amountOutA > arb.amountOutB ? arb.routerA : arb.routerB;
   const buyRouter = routers.find(r => r.address.toLowerCase() === buyRouterAddr.toLowerCase());
 
-  const executorContractRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_contract_address"').first() as { value: string } | null;
-  const executorModeRes = await DB.prepare('SELECT value FROM config WHERE key = "executor_mode"').first() as { value: string } | null;
-  const executorContract = executorContractRes?.value || '';
-  const executorMode = executorModeRes?.value || 'direct';
-
   if (env.AI && !arbBothWellKnown) {
     const { scoreTrade } = await import('./ai-execution');
     const tradeScore = await scoreTrade(DB, env.AI, {
@@ -1829,43 +1736,6 @@ export async function runBotStrategy(
 
   async function soloExecuteLeg(fromToken: string, toToken: string, amountIn: string, router: any, fromDecimals: number): Promise<ethers.TransactionResponse> {
     const version = (router.version || 'v2').toLowerCase();
-    const tryContract = (executorMode === 'contract' || executorMode === 'become') && executorContract;
-    if (tryContract) {
-      try {
-        if (version !== 'v2' && version !== 'v3' && version !== 'algebra') {
-          throw new Error(`Contract mode does not support version: ${version}`);
-        }
-        const amountInWei = ethers.parseUnits(amountIn, fromDecimals);
-        const quote = await quoteAmountOut(provider, fromToken, toToken, amountInWei, router, defaultFeeTier);
-        const minOut = quote && quote.amountOut > 0n
-          ? quote.amountOut * BigInt(Math.floor((100 - sp.optimal) * 100)) / 10000n
-          : 0n;
-        const v = isV3Family(version) ? 1 : 0;
-        const dexData = ethers.AbiCoder.defaultAbiCoder().encode(['uint8', 'address'], [v, router.address]);
-        const arbContract = new ethers.Contract(executorContract, ARB_EXECUTOR_ABI, wallet);
-        const tokenContract = new ethers.Contract(fromToken, ERC20_ABI, wallet);
-        const allowance = await tokenContract.allowance(wallet.address, executorContract) as bigint;
-        if (allowance < amountInWei) {
-          const appTx = await tokenContract.approve(executorContract, ethers.MaxUint256, {
-            gasLimit: 100000,
-            ...await getGasOverrides(provider),
-          });
-          const appReceipt = await waitTx(appTx, 1, 30000);
-          if (!appReceipt || appReceipt.status === 0) { throw new Error('Failed to set token allowance'); }
-        }
-        const tx = await arbContract.executeArb(fromToken, toToken, amountInWei, minOut, dexData, {
-          gasLimit: 500000,
-          ...await getGasOverrides(provider),
-        }) as ethers.TransactionResponse;
-        return tx;
-      } catch (err) {
-        if (executorMode === 'become') {
-          console.warn('Contract execution failed, falling back to direct:', err);
-        } else {
-          throw err;
-        }
-      }
-    }
     if (isV3Family(version)) {
       const quoterAddr = (router.quoter_address || '').trim();
       if (!quoterAddr) throw new Error("V3 router missing quoter_address");
