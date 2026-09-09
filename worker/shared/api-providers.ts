@@ -14,20 +14,29 @@ export const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0xd6df932a45c0f255f85145f286ea0b292b21c90b', // AAVE
     '0x0b3f868e0be5597d5db7feb59e1cadbb0fdda50a', // SUSHI
     '0xb33eaad8d922b1083446dc23f610c2567fb5180f', // UNI
+    '0xb5c064f955d8e7f38fe0460c556a72987494ee17', // QUICK
     '0x3ba4c387f786bfee076a58914f5bd38d668b42c3', // BNB
     '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', // SOL (Wormhole)
     '0x172370d5cd63279efa6d502dab29171933a610af', // CRV
-    '0xb5c064f955d8e7f38fe0460c556a72987494ee17', // QUICK
     '0xbbba073c31bf03b8acf7c28ef0738decf3695683', // SAND
-    '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd', // wstETH
-    '0x3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4', // stMATIC (Lido)
+    '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd', // stMATIC (Lido)
+    '0x3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4', // maticX (Stader)
     '0xfa68fb4628dff1028cfec22b4162fccd0d45efb6', // MATICX (Stader)
     '0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7', // GHST
     '0x50b728d8d964fd00c2d0aad81718b71311fef68a', // SNX
     '0x5fe2b58c013d7601147dcdd68c143a77499f5531', // GRT
     '0x750e4c4984a9e0f12978ea6742bc1c5d248f40ed', // axlUSDC (Axelar)
-    '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
-    '0x27ab6e82f3458edbc0703db2756391b899ce6324', // RNT (Reental) — RWA, $3.77M SushiSwap liquidity
+    '0x27ab6e82f3458edbc0703db2756391b899ce6324', // RNT (Reental)
+    '0x0b2c639c533813f489d7837caf62653d097ff85', // USDC (Bridged v2)
+    '0x6a92b1e99de09f71cd96bc91f934826d96b8b26e', // GRT (alt)
+    '0x778575dda30c784678c5972ff41f75671415cddc', // SAND (alt)
+    '0xb0897686c545045afc77cf20ec7a532e3120e0f1', // IRIS
+    '0x06d02e9d62a13fc76bb229373fb3bbbd1101d2fc', // LOD
+    '0x0ffd960881c83cd63a50d5c944c9f2b866f55a28', // USDT0
+    '0xd93f7e271cb87c23aaa73edc008a79646d1f9912', // SOL
+    '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // SWAMP
+    '0xeb51d9a39ad5eef215dc0bf39a8821ff804a0f1', // GAME
+    '0xf854225caaef5a722884a68a23215dfa5386751e', // FISH
   ]),
   1: new Set([
     '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
