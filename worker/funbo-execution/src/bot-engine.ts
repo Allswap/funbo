@@ -352,58 +352,7 @@ async function queryBalancerSwap(
   }
 }
 
-const WMATIC_ADDRESS = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'.toLowerCase();
 
-const WMATIC_ABI = [
-  'function balanceOf(address) view returns (uint256)',
-  'function deposit() payable',
-] as const;
-
-async function ensureWmaticBalance(
-  wallet: ethers.Wallet,
-  provider: ethers.Provider,
-  tokenA: string,
-  amountInWei: bigint,
-  env?: any
-): Promise<void> {
-  if (tokenA.toLowerCase() !== WMATIC_ADDRESS) return;
-
-  const wmatic = new ethers.Contract(WMATIC_ADDRESS, WMATIC_ABI, wallet);
-  const balance = await wmatic.balanceOf(wallet.address) as bigint;
-  const targetBalance = amountInWei * 2n;
-  if (balance >= targetBalance) {
-    console.log(`[executor] WMATIC balance OK: ${ethers.formatEther(balance)} (target ${ethers.formatEther(targetBalance)})`);
-    return;
-  }
-
-  const needed = targetBalance - balance;
-  const nativeBalance = await provider.getBalance(wallet.address);
-  const gasReserve = ethers.parseEther('0.5');
-  const wrapAmount = nativeBalance > needed + gasReserve ? needed : (nativeBalance > gasReserve ? nativeBalance - gasReserve : 0n);
-
-  if (wrapAmount <= 0n) {
-    console.log(`[executor] skip wrap: MATIC balance ${ethers.formatEther(nativeBalance)} insufficient (need ${ethers.formatEther(needed + gasReserve)})`);
-    return;
-  }
-
-  console.log(`[executor] wrapping ${ethers.formatEther(wrapAmount)} MATIC → WMATIC (have ${ethers.formatEther(balance)} WMATIC, target ${ethers.formatEther(targetBalance)}, native ${ethers.formatEther(nativeBalance)})`);
-  try {
-    const tx = await wmatic.deposit({
-      value: wrapAmount,
-      gasLimit: 100000,
-      ...await getGasOverrides(provider),
-    });
-    const receipt = await waitTx(tx, 1, 30000);
-    if (!receipt || receipt.status === 0) {
-      console.error(`[executor] WMATIC wrap failed: tx=${tx.hash}`);
-    } else {
-      const newBalance = await wmatic.balanceOf(wallet.address) as bigint;
-      console.log(`[executor] wrapped OK tx=${tx.hash} new WMATIC=${ethers.formatEther(newBalance)}`);
-    }
-  } catch (err: any) {
-    console.error(`[executor] WMATIC wrap error: ${err.message}`);
-  }
-}
 
 const ERC20_ABI = [
   'function approve(address,uint256) returns (bool)',
@@ -1173,8 +1122,6 @@ export async function executeOpportunity(
   const tokenA = opp.token_a;
   const tokenB = opp.token_b;
 
-  await ensureWmaticBalance(wallet, provider, tokenA, ethers.parseEther(tradeAmount));
-
   const tokenABalance = await (new ethers.Contract(tokenA, ['function balanceOf(address) view returns (uint256)'], provider)).balanceOf(wallet.address) as bigint;
   if (tokenABalance === 0n) {
     console.log(`[executor] opp #${opp.id} skip: zero ${tokenA.slice(0,10)} balance`);
@@ -1441,8 +1388,6 @@ export async function executeTriangularArb(
   if (!router) {
     return { success: false, strategy: 'triangular', tokenA, tokenB, amountIn: '0', amountOut: '0', profitPct: 0, status: 'skipped', txHash: null, errorMsg: 'Router not found in DB' };
   }
-
-  await ensureWmaticBalance(wallet, provider, tokenA, ethers.parseEther(tradeAmountStr));
 
   const dailyLossLimitRes = await DB.prepare('SELECT value FROM config WHERE key = "daily_loss_limit"').first() as { value: string } | null;
   const dailyLossLimit = dailyLossLimitRes ? parseFloat(dailyLossLimitRes.value) : 5.0;
