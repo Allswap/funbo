@@ -100,7 +100,11 @@ function isAddressUsable(addr: any): boolean {
 // eth_getCode via rawEthCall(rpc, addr, '0x'): returns deployed bytecode hex; EOA returns '0x'.
 async function liveCodeCheck(rpcUrl: string, address: string, env: any): Promise<boolean> {
   try {
-    return codeIsLive(await rawEthCall(rpcUrl, address, '0x', env));
+    const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_getCode', params: [address, 'latest'], id: 1 });
+    const res = await fetch(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
+    const json = await res.json() as any;
+    const code = json.result || null;
+    return !!code && code !== '0x' && code !== '0x0';
   } catch {
     return false;
   }
