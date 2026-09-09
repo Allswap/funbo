@@ -468,7 +468,7 @@ async function executePendingOpportunities(env: Env): Promise<any> {
       break;
     }
     const r = await executeSingleOpp(pending[i]);
-    if (r) executed++;
+    if (r) { executed++; break; }
   }
   return { success: true, executed, message: `Executed ${executed} opportunities` };
 }

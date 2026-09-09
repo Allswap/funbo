@@ -27,6 +27,8 @@ export const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0x5fe2b58c013d7601147dcdd68c143a77499f5531', // GRT
     '0x750e4c4984a9e0f12978ea6742bc1c5d248f40ed', // axlUSDC (Axelar)
     '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
+    '0x27ab6e82f3458edbc0703db2756391b899ce6324', // RNT (Reental) — RWA, $3.77M SushiSwap liquidity
+    '0x2f6f07cdcf3588944bf4c42ac74ff24bf56e7590', // STG (Stargate Finance) — bridge, $371K liquidity
   ]),
   1: new Set([
     '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH

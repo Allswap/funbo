@@ -191,6 +191,33 @@ const MIGRATIONS = [
       INSERT OR IGNORE INTO config (key, value) VALUES ('registry_verify_pairs_per_run', '5');
     `
   },
+  {
+    id: '043_raise_trade_size_long_tail_tokens',
+    sql: `
+      -- Raise trade size: 0.1 → 1.0 POL (10x) to overcome LP fees + gas on real trades.
+      UPDATE config SET value = '1.0' WHERE key = 'trade_amount' AND value = '0.1';
+
+      -- Long-tail tokens with REAL two-sided liquidity on Polygon (verified Sep 2026):
+      --   RNT (Reental): $3.77M SushiSwap pool, $9.35K/day volume, 0.60% spread, RWA tokenized real estate
+      --   STG (Stargate Finance): $371K liquidity, bridge token, active cross-chain volume
+
+      -- Token pairs — RNT (18 decimals, ~$0.30)
+      INSERT OR IGNORE INTO token_pairs (chain_id, token_a, token_b, label, is_active) VALUES
+        (137, '0x27ab6e82f3458edbc0703db2756391b899ce6324', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', 'RNT/USDT', 1),
+        (137, '0x27ab6e82f3458edbc0703db2756391b899ce6324', '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 'RNT/WPOL', 1),
+        (137, '0x27ab6e82f3458edbc0703db2756391b899ce6324', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'RNT/USDC.e', 1);
+
+      -- Token pairs — STG (18 decimals, ~$0.17)
+      INSERT OR IGNORE INTO token_pairs (chain_id, token_a, token_b, label, is_active) VALUES
+        (137, '0x2f6f07cdcf3588944bf4c42ac74ff24bf56e7590', '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 'STG/USDC', 1),
+        (137, '0x2f6f07cdcf3588944bf4c42ac74ff24bf56e7590', '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 'STG/WPOL', 1),
+        (137, '0x2f6f07cdcf3588944bf4c42ac74ff24bf56e7590', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'STG/USDC.e', 1);
+
+      -- Solo-spot strategy for RNT (has real SushiSwap + QuickSwap liquidity)
+      INSERT OR IGNORE INTO solo_spot_strategies (chain_id, token_address, trade_amount, is_active) VALUES
+        (137, '0x27ab6e82f3458edbc0703db2756391b899ce6324', '100', 1);
+    `
+  },
 ];
 
 const TABLE_SCHEMAS = [
