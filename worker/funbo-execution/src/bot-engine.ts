@@ -1254,6 +1254,24 @@ export async function executeOpportunity(
     return { success: false, strategy: 'arb', tokenA, tokenB, amountIn: '0', amountOut: '0', profitPct: grossProfitPct, status: 'skipped', txHash: null, errorMsg: `Net profit ${netProfitPct.toFixed(3)}% < ${minNetProfitPct}%` };
   }
 
+  // Flash loan path for cross_dex and triangular: borrow → buy → sell → repay in one atomic tx
+  if (strategy === 'cross_dex' || strategy === 'triangular') {
+    try {
+      const flashResult = await tryFlashLoanArb(
+        env, network, tokenA, tradeAmount, tokenB,
+        buyRouter.address, sellRouter.address, String(netProfitPct.toFixed(2))
+      );
+      if (flashResult.success) {
+        console.log(`[executor] opp #${opp.id} flash loan SUCCESS tx=${flashResult.txHash}`);
+        return { success: true, strategy, tokenA, tokenB, amountIn: tradeAmount, amountOut: '0', profitPct: netProfitPct, status: 'success', txHash: flashResult.txHash, errorMsg: null };
+      }
+      console.log(`[executor] opp #${opp.id} flash loan failed: ${flashResult.errorMsg}, falling back to normal execution`);
+    } catch (e: any) {
+      console.log(`[executor] opp #${opp.id} flash loan error: ${e.message}, falling back to normal execution`);
+    }
+  }
+
+  // Normal execution path: use bot wallet balance
   const beforeState = await getWalletState(provider, wallet.address, tokenA, tokenB);
    let txHash: string | null = null;
 
