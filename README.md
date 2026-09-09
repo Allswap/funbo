@@ -1,187 +1,177 @@
-# EVM Trading Bot
+# Funbo — EVM Trading Bot
 
-Multi-chain arbitrage trading bot with a Cloudflare Worker backend and React dashboard. Configure everything dynamically — networks, DEX routers, wallets, and bot parameters — with no code changes needed.
+Multi-strategy arbitrage trading bot on Polygon with Cloudflare Workers backend and React dashboard. Supports solo-spot, triangular, and cross-DEX arbitrage with optional flash loan execution via Aave V3.
 
 ## Architecture
 
 ```
-evm-bots/
-├── worker/              Cloudflare Worker (Hono + D1) — bot engine + REST API
-│   ├── src/
-│   │   ├── index.ts         Hono app, CRUD routes, cron handler
-│   │   ├── bot-engine.ts    Arb scanner, safety checks, swap execution
-│   │   ├── ai-advisor.ts    Workers AI — strategy + config suggestions
-│   │   ├── notifier.ts      Discord / Telegram / Email alerts
-│   │   ├── db.ts            D1 schema init, key hashing, trade logging
-│   │   └── env.d.ts         TypeScript bindings
-│   ├── schema.sql           D1 table definitions
-│   ├── seed.sql             Default config values + API key
-│   └── wrangler.jsonc       Cloudflare config (D1, cron, AI, email)
+funbo-repo/
+├── worker/
+│   ├── funbo/                  Main API + dashboard proxy (Cloudflare Worker)
+│   ├── funbo-discovery/        Scanner: finds arb opportunities (spot, cross-dex, triangular)
+│   ├── funbo-execution/        Executor: executes pending opportunities
+│   ├── funbo-analytics/        Analytics + cleanup cron
+│   └── shared/                 Shared code (quotes, RPC pool, token safety, API providers)
 │
-└── dashboard/          Vite + React + Tailwind dashboard (Cloudflare Pages)
-    ├── functions/api/[[path]].ts    Proxies /api/* to Worker
-    ├── public/_redirects            SPA fallback
-    └── src/
-        ├── api/client.ts            Axios + X-API-Key interceptor
-        └── components/              Login, Dashboard, Network, Dex,
-                                     Wallet, Config managers
+├── contracts/
+│   └── src/FlashLoanArb.sol    Aave V3 flash loan arb contract (deployed on Polygon)
+│
+├── dashboard/                  Vite + React + Tailwind dashboard (Cloudflare Pages)
+│
+└── .github/workflows/
+    ├── deploy.yml              CI/CD: deploys all workers on push to main
+    └── bot-crons.yml           Cron: spot, cross-dex shards, execute, scan-and-execute (every 30m)
 ```
 
-## Prerequisites
+### Worker URLs
 
-- [Node.js](https://nodejs.org/) 18+
-- [Cloudflare account](https://dash.cloudflare.com/) with D1 database + Workers AI
-- An EVM private key (for the wallet that executes swaps)
-- RPC URLs for the chains you want to trade on
+| Worker | URL | Purpose |
+|--------|-----|---------|
+| funbo | `https://funbo.nobtx-io.workers.dev` | Main API |
+| funbo-discovery | `https://funbo-discovery.nobtx-io.workers.dev` | Scanner |
+| funbo-execution | `https://funbo-execution.nobtx-io.workers.dev` | Executor |
+| funbo-analytics | `https://funbo-analytics.nobtx-io.workers.dev` | Analytics |
 
-## Setup
+## Strategies
 
-### 1. Worker (deploy locally)
+| Strategy | Description | Status |
+|----------|-------------|--------|
+| `solo_spot` | Configured token pairs across routers (via `solo_spot_strategies` table) | ✅ Active |
+| `triangular` | Same-DEX 3-leg arb: WPOL→A→B→WPOL on one router | ✅ Active |
+| `cross_dex` | Cross-DEX arb: buy on router X, sell on router Y with round-trip verification | ✅ Active |
 
-```bash
-cd worker
-npm install
+### Cross-DEX Scanner (Round-Trip Verified)
 
-# Create D1 database
-npx wrangler d1 create bot-db
-# → Copy database_id into wrangler.jsonc
+The scanner quotes A→B on both routers, picks the one giving more B, then verifies the full round-trip (sell B back for A on the other router). Only records if `reverse output > input` — no fake profits.
 
-# Set required secrets
-npx wrangler secret put PRIVATE_KEY
+### Flash Loan Integration
 
-# Optional secrets
-npx wrangler secret put TELEGRAM_BOT_TOKEN
-npx wrangler secret put BLOXROUTE_RPC_URL
-npx wrangler secret put GOPLES_API_KEY
+For cross_dex and triangular strategies, the executor first attempts a flash loan path:
+1. Borrows from Aave V3 Pool (`0x794a61358D6845594F94dc1DB02A252b5b4814aD`)
+2. Buys token on router A
+3. Sells token on router B
+4. Repays loan + fee in one atomic tx
 
-# Seed database
-npm run seed
+Falls back to normal 2-leg swap if flash loan fails.
 
-# Deploy
-npx wrangler deploy
-```
+**Contract:** `0x205d93c618AE9Ce01E963eba6e97d022235dceBe` (verified on PolygonScan)
 
-### 2. Dashboard (Cloudflare Pages — auto-deploys from GitHub)
+## Cron Schedule
 
-```bash
-cd dashboard
-npm install
-npm run dev     # local dev with Vite proxy to local Worker
-```
+Managed by **cron-job.org** (external) + **GH Actions** (fallback):
 
-1. Push repo to GitHub
-2. Connect to Cloudflare Pages (build: `npm run build`, output: `dist`)
-3. Update `functions/api/[[path]].ts` with your Worker URL
-4. Push → auto-deploys
+| Cron | Interval | Source | Endpoint |
+|------|----------|--------|----------|
+| `execute` | 5 min | cron-job.org | `POST /api/cron/execute` |
+| `spot_strategies` | 15 min | cron-job.org | `POST /api/cron/spot-strategies` |
+| `cross_dex` (×3 shards) | 15 min | cron-job.org | `POST /api/cron/cross-dex` |
+| `registry_verify` | 30 min | cron-job.org | `POST /api/cron/registry-verify` |
+| `hourly_discovery` | 60 min | cron-job.org | `POST /api/cron/hourly-discovery` |
+| `scan_and_execute` | 30 min | GH Actions | `POST /api/cron/scan-and-execute` |
 
-### 3. Login
+Dedup gates prevent overlapping runs (10-20 min windows per cron key).
 
-Enter the default API key: **`admin123`**
-
-Replace it before production:
-```bash
-cd worker
-npm run generate-key     # outputs a secure key + hash
-# Then delete admin123:
-npx wrangler d1 execute bot-db --command "DELETE FROM api_keys WHERE key_hash = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';"
-```
-
-## Bot Config (all managed from dashboard)
+## Bot Config (D1 `config` table)
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `auto_scan_enabled` | `true` | Toggle automated scanning |
-| `scan_interval_minutes` | `5` | Min between scans (cron fires every 1min) |
-| `min_profit_pct` | `1.5` | Minimum profit % to execute |
-| `max_profit_pct` | `20.0` | Max profit % to execute (upper bound filter) |
-| `max_trade_decimals` | `3` | Truncate amount to N decimals |
-| `min_slippage` | `0.5` | Min slippage floor — bot auto-detects optimal slippage, clamped to at least this |
-| `slippage_buffer_pct` | `1.0` | Fixed buffer added on top of live price impact + LP fee (sandwich/volatility protection) |
-| `lp_fee_pct` | `0.3` | LP fee % used in live slippage calc for V2 routes (V3 uses the fee tier) |
-| `scan_cost_buffer_pct` | `2.0` | Min gross spread a scan must clear before inserting an opp (slippage 1% + LP fee + gas) |
-| `active_strategies` | `solo_spot,triangular` | Comma list of enabled strategies — everything else is deactivated |
-| `main_token` | `0x0000000000000000000000000000000000001010` | Main swap token = native POL |
-| `wrapped_token` | `0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270` | WPOL — used only when a pool has no native-POL path |
-| `daily_loss_limit` | `5.0` | Circuit breaker — stops if daily loss exceeds |
-| `mm_rebalance_threshold` | `5.0` | LP rebalance threshold |
-| `trade_token_a` | — | Token A address for arb pairs |
-| `trade_token_b` | — | Token B address for arb pairs |
-| `trade_amount` | `0.1` | Trade amount in native token |
+| `active_strategies` | `solo_spot,triangular,cross_dex` | Enabled strategies |
+| `trade_amount` | `1.0` | Trade size in POL |
+| `min_profit_pct` | `0.5` | Minimum gross profit % |
+| `max_profit_pct` | `50` | Max profit ceiling |
+| `min_net_profit_pct` | `0.1` | Net profit after gas + slippage |
+| `min_net_profit_pct_cross_dex` | `0.5` | Net profit threshold for cross-dex |
+| `min_net_profit_pct_triangular` | `0.5` | Net profit threshold for triangular |
+| `min_net_profit_pct_solo_spot` | `0.1` | Net profit threshold for solo-spot |
+| `min_slippage` | `0.5` | Min slippage floor |
+| `slippage_buffer_pct` | `1.0` | Sandwich/volatility buffer |
+| `lp_fee_pct` | `0.3` | LP fee for slippage calc |
+| `scan_cost_buffer_pct` | `2.0` | Min gross spread for scan insertion |
+| `max_decimals` | `3` | Truncate trade amount decimals |
+| `daily_loss_limit` | `5.0` | Circuit breaker threshold |
+| `main_token` | `0x000...1010` | Native POL |
+| `wrapped_token` | `0x0d50...1270` | WPOL |
 
-### Notifications
+## D1 Database
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `notify_urgent` | `discord,telegram` | Channels for circuit breaker alerts |
-| `notify_average` | `discord` | Channels for AI suggestions (1/hr max) |
-| `notify_normal` | `discord` | Channels for daily summary (1/24hr) |
-| `discord_webhook_url` | — | Discord webhook URL |
-| `telegram_chat_id` | — | Numeric chat ID |
-| `telegram_username` | — | @username fallback |
-| `notify_email_from` | — | Sender email (needs Cloudflare Email domain) |
-| `notify_email_to` | — | Recipient email |
+| Table | Purpose |
+|-------|---------|
+| `config` | Bot configuration (key-value) |
+| `networks` | Chain configs (chain_id, rpc_url, is_active) |
+| `dex_routers` | DEX router configs (address, version, quoter, is_active) |
+| `token_pairs` | Tradeable pairs (token_a, token_b, is_active) |
+| `solo_spot_strategies` | Solo-spot strategy configs (token, trade_amount, thresholds) |
+| `opportunities` | Scanner output → executor input (status: pending/executed/failed/skipped) |
+| `trades` | Executed trade history |
+| `wallets` | Bot wallet addresses |
+| `api_keys` | Dashboard auth |
+
+## Supported Routers
+
+| Router | Version | Address |
+|--------|---------|---------|
+| QuickSwap V2 | v2 | `0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff` |
+| SushiSwap V2 | v2 | `0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506` |
+| Uniswap V2 | v2 | `0xedf6066a2b290C185783862C7F4776A2C8077AD1` |
+| QuickSwap V3 | v3 | `0xf5b509bB0909a69B1c207E495f687a596C168E12` |
+
+## Key Token Addresses (Polygon)
+
+| Token | Address |
+|-------|---------|
+| WPOL | `0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270` |
+| USDC | `0x3c499c542cef5e3811e1192ce70d8cc03d5c3359` |
+| USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` |
+| WETH | `0x7ceb23fd6bc0add59e62ac25578270cff1b9f619` |
+| WBTC | `0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6` |
+| BRT (BroilerPuls) | `0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b` |
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/networks` | List all networks |
-| POST | `/api/networks` | Add network |
-| DELETE | `/api/networks/:chainId` | Deactivate network |
+| GET | `/api/health` | Worker health check |
+| GET | `/api/networks` | List networks |
 | GET | `/api/routers` | List DEX routers |
-| POST | `/api/routers` | Add router |
-| DELETE | `/api/routers/:id` | Remove router |
-| GET | `/api/wallets` | List wallets |
-| POST | `/api/wallets` | Add wallet |
-| PATCH | `/api/wallets/:id` | Toggle active |
-| DELETE | `/api/wallets/:id` | Remove wallet |
 | GET | `/api/config` | List config |
-| GET | `/api/config/:key` | Get config value |
 | POST | `/api/config` | Set config value |
 | GET | `/api/trades` | Trade history |
 | POST | `/api/bot/run` | Trigger manual scan |
-| GET | `/api/bot/status` | Auto-scan toggle + last scan |
-
-All requests require `X-API-Key` header.
-
-## AI Advisor
-
-After each scan, the bot feeds recent trades + PnL + config to **Llama 3 (Workers AI)**. The AI returns suggestions stored as `ai_suggest_*` config keys:
-
-- Strategy switches (arb ↔ mm ↔ yield)
-- Config tweaks (min/max profit, slippage, decimals)
-- Security flags
-
-View suggestions: `SELECT * FROM config WHERE key LIKE 'ai_suggest_%';`
-
-## Notification Levels
-
-| Level | Throttle | Triggers | Default channels |
-|-------|----------|----------|-----------------|
-| Urgent | Instant | Circuit breaker | discord, telegram |
-| Average | 1 hour | AI suggestions | discord |
-| Normal | 24 hours | Daily summary | discord |
-
-## Cron Schedule
-
-Cron fires every minute (`* * * * *`). The `scan_interval_minutes` config (default 5) controls actual scan frequency — configurable from dashboard without redeploying.
+| GET | `/api/bot/status` | Bot status |
+| POST | `/api/cron/execute` | Execute pending opps |
+| POST | `/api/cron/spot-strategies` | Run spot scan |
+| POST | `/api/cron/cross-dex` | Run cross-dex scan |
+| POST | `/api/cron/scan-and-execute` | Combined scan + execute |
+| POST | `/api/cron/registry-verify` | Verify router bytecode |
 
 ## Safety Features
 
-- **Token safety scan** — GoPlus honeypot/tax/blacklist check
-- **Router verification** — validates DEX router bytecode
-- **MEV risk check** — mempool sandwich/frontrun detection
-- **Circuit breaker** — stops trading when daily loss exceeds limit
-- **Per-wallet balance rules** — minimum balance enforcement
+- **Round-trip verification** — cross-dex scanner verifies full buy→sell cycle before recording
+- **Live re-quote** — executor re-checks arb exists at execution time
+- **Token safety** — GoPlus honeypot/tax/blacklist scan
+- **Circuit breaker** — stops trading on daily loss limit
+- **Slippage protection** — live price impact + LP fee + sandwich buffer
 - **Max profit ceiling** — skips suspiciously profitable opportunities
+- **RPC health** — automatic failover across multiple RPC providers
+- **403 blocklist** — RPCs that return errors are temporarily blacklisted
 
 ## Deployment
 
 ```bash
-# Worker
-cd worker
-npx wrangler deploy
+# Push to main → CI/CD auto-deploys all workers
+git add . && git commit -m "feat: ..." && git push origin main
 
-# Dashboard — push to GitHub, Pages auto-deploys
-git add . && git commit -m "update" && git push
+# Manual deploy
+cd worker/funbo-discovery && npx wrangler deploy
+cd worker/funbo-execution && npx wrangler deploy
 ```
+
+## Environment Secrets (Cloudflare Workers)
+
+| Secret | Purpose |
+|--------|---------|
+| `PRIVATE_KEY` | Bot wallet private key |
+| `POLYGON_RPC` | Primary RPC URL (Alchemy) |
+| `ETHERSCAN_API_KEY` | Contract verification |
+| `AI` | Cloudflare Workers AI binding |
+| `EMAIL` | Cloudflare Email binding |
