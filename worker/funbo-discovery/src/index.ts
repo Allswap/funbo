@@ -643,6 +643,8 @@ app.post('/api/cron/cross-dex', async (c) => {
   const DB = c.env['funbo-db'];
   const shardKey = `cross_dex_shard${shard || 1}`;
   if (!(await dedupCronRun(DB, shardKey, 15))) return c.json({ success: true, message: 'Skipped: already ran recently' });
+  const active = await getActiveStrategies(DB);
+  if (!strategyEnabled(active, 'cross_dex')) return c.json({ success: true, message: 'Skipped: cross_dex not in active_strategies' });
   const networks = await DB.prepare('SELECT * FROM networks WHERE is_active = 1').all() as { results: any[] };
   const polygon = networks.results.filter((n: any) => n.chain_id === 137);
   if (polygon.length === 0) return c.json({ error: 'No polygon network' }, 400);
