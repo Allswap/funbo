@@ -1,3 +1,5 @@
+import { ethers, run } from "hardhat";
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   
@@ -17,7 +19,7 @@ async function main() {
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (apiKey) {
     console.log("Verifying contract on Polygonscan...");
-    await hre.run("verify:verify", {
+    await run("verify:verify", {
       address: address,
       constructorArguments: [],
     });
@@ -25,8 +27,9 @@ async function main() {
   }
   
   console.log("\n--- Next Steps ---");
+  console.log("NOTE: ArbExecutor is DEACTIVATED in the bot (executor_mode=direct, wallet->router swaps).");
   console.log("1. Add to dashboard ConfigManager: executor_contract_address =", address);
-  console.log("2. Set executor_mode to 'contract' in dashboard");
+  console.log("2. Set executor_mode to 'contract' in dashboard (only if re-enabling contract mode)");
   console.log("3. Approve tokens via contract before trading");
 }
 
