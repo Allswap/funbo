@@ -4,7 +4,7 @@ import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFro
 import { ethers } from 'ethers';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
-import { rawQuoteRoute, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 import { isPolToken, POL_NATIVE, POL_WRAPPED } from '../../shared/aggregator';
 import { WELL_KNOWN_TOKENS } from './api-providers';
 import { scanBrtQuote } from './brt-quote';
@@ -231,11 +231,13 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           let bestRouter = v2Routers[0];
           for (const router of v2Routers) {
             const rpcBase = workingRpcs[rpcIdx % workingRpcs.length];
+            // Chain the quotes: each leg's output feeds the next leg's input (1e18 raw of tA → tB → tC → tA).
+            // qCA and DEFAULT_AMOUNT_IN are both in tA raw units, so decimals cancel — no per-token scaling needed.
             const qAB = await rawQuoteRoute(rpcBase, tA, tB, router, feeTier, env);
             if (!qAB || qAB === 0n) continue;
-            const qBC = await rawQuoteRoute(rpcBase, tB, tC, router, feeTier, env);
+            const qBC = await rawQuoteRouteAmount(rpcBase, tB, tC, router, feeTier, qAB, env);
             if (!qBC || qBC === 0n) continue;
-            const qCA = await rawQuoteRoute(rpcBase, tC, tA, router, feeTier, env);
+            const qCA = await rawQuoteRouteAmount(rpcBase, tC, tA, router, feeTier, qBC, env);
             if (!qCA || qCA === 0n) continue;
             const profitPct = Number((qCA - DEFAULT_AMOUNT_IN) * 10000n / DEFAULT_AMOUNT_IN) / 100;
             if (profitPct > bestProfit) {
@@ -243,7 +245,9 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
               bestRouter = router;
             }
           }
-          if (bestProfit >= triMinProfitPct) {
+          // Phantom guard (same as cross-dex section): honest round trips on real liquidity are <10%;
+          // bigger "profits" come from thin/junk pools or stale quotes and only waste execution subrequests.
+          if (bestProfit >= triMinProfitPct && bestProfit <= 10) {
             await DB.prepare('INSERT INTO opportunities (chain_id, router_a, router_b, token_a, token_b, amount_in, profit_pct, status) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")')
               .bind(chainId, bestRouter.address, bestRouter.address, tA, tB, tradeAmount, bestProfit).run();
             triInserted++;
@@ -415,7 +419,11 @@ async function executePendingOpportunities(env: Env): Promise<any> {
     if (ra && ra === rb) return 'triangular';
     return 'cross_dex';
   };
-  const pending = (await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 10').all() as { results: any[] })
+  // One opportunity per invocation: a single execution burns up to ~40 fetch subrequests (decimals,
+  // 5-tier V3 quote probes × 3 legs, health probes). Cloudflare's free plan caps a Worker at 50
+  // subrequests — draining several opps in one invocation fails mid-execution ("Too many subrequests").
+  // The 5m execute cron / inline triggers re-invoke this, so pending opps still drain over time.
+  const pending = (await DB.prepare('SELECT * FROM opportunities WHERE status = "pending" ORDER BY profit_pct DESC LIMIT 1').all() as { results: any[] })
     .results.filter((o: any) => o.chain_id === 137 && strategyEnabled(active, oppStrategy(o)));
   console.log(`[executor] found ${pending.length} pending opps (active: ${active.join(',')})`);
   if (pending.length === 0) return { success: true, message: 'No pending opportunities.', executed: 0 };

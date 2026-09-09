@@ -134,6 +134,48 @@ const MIGRATIONS = [
       );
     `
   },
+  {
+    id: '041_no_trades_investigation_cleanup',
+    sql: `
+      -- Cause #5: dex_routers pollution — deactivate quoter-as-router rows (quoting "works" via
+      -- quoter_address, but executing against a quoter contract reverts) and the unquotable
+      -- Universal Router row (no quoter; quoting falls through to the V2 getAmountsOut path and reverts).
+      UPDATE dex_routers SET is_active = 0
+      WHERE chain_id = 137 AND is_active = 1 AND (
+        LOWER(address) LIKE '0x0a6e7686%'    -- "SushiSwap V3" row: QuoterV2 address, not the router
+        OR LOWER(address) LIKE '0x76d91074%' -- "Ramses V3 (V1)/(V2)" rows: quoter address, not a router
+        OR LOWER(COALESCE(version, '')) = 'universal'
+      );
+
+      -- Fix "Uniswap V3 (V2)" row: wrong quoter 0x61fCEf40... → canonical UniswapV3 QuoterV2 on Polygon.
+      UPDATE dex_routers SET quoter_address = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e'
+      WHERE chain_id = 137 AND LOWER(COALESCE(quoter_address, '')) LIKE '0x61fcef40%';
+
+      -- Cause #4: prune junk / dead-liquidity pairs (LGNS, AS, GNZ, SCR, wXLM/XLM, LEO, BNB dead pools) —
+      -- the source of phantom thin-pool quotes. Slash-delimited match avoids substring false positives.
+      UPDATE token_pairs SET is_active = 0
+      WHERE chain_id = 137 AND is_active = 1 AND (
+        '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/LGNS/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/AS/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/GNZ/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/SCR/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/WXLM/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/XLM/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/LEO/%'
+        OR '/' || UPPER(COALESCE(label, '')) || '/' LIKE '%/BNB/%'
+      );
+
+      -- Make active_strategies explicit (live row is NULL; code defaults become the single source of truth).
+      -- Only fills empty/missing values so operator intent is never overwritten.
+      INSERT INTO config (key, value) VALUES ('active_strategies', 'solo_spot,triangular')
+      ON CONFLICT(key) DO UPDATE SET value = 'solo_spot,triangular'
+      WHERE config.value IS NULL OR TRIM(config.value) = '';
+
+      -- Cause #5: one-time RPC pool refresh — clear 403 blocklist entries (stale long TTLs choke the
+      -- free-plan 50-subrequest budget via retries); dead providers re-blocklist automatically.
+      DELETE FROM config WHERE key LIKE 'rpc_403_blocklist:%';
+    `
+  },
 ];
 
 const TABLE_SCHEMAS = [

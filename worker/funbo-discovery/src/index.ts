@@ -635,12 +635,9 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
       const stratDecimals = await getTokenDecimals(rpcUrl, strat.token_address, strat.chain_id, env);
       const stratAmountWei = ethers.parseUnits(strat.trade_amount || '10', stratDecimals);
 
-      // POL focus: swap legs are POL (native preferred, WPOL only when no native pool exists).
-      const polPairs = buildPolPreferredPairs((await DB.prepare('SELECT * FROM token_pairs WHERE chain_id = ? AND is_active = 1').bind(strat.chain_id).all() as { results: any[] }).results);
-      const polSideByPartner = new Map<string, string>();
-      for (const pp of polPairs) polSideByPartner.set(pp.token_b.toLowerCase(), pp.token_a);
-      const polSideForPartner = (partner: string) => polSideByPartner.get(partner.toLowerCase()) || POL_WRAPPED;
-
+      // The strategy token itself is the POL leg (native POL / WPOL); arbitrage partners are the
+      // other side of its active token_pairs rows. Quote strategy token → partner → strategy token
+      // across router pairs (matches executeSoloSpotFromOpp: opp.token_a = input, opp.token_b = partner).
       const pairRows = await DB.prepare(
         'SELECT token_a AS partner FROM token_pairs WHERE token_b = ? AND chain_id = ? AND is_active = 1 UNION SELECT token_b AS partner FROM token_pairs WHERE token_a = ? AND chain_id = ? AND is_active = 1'
       ).bind(strat.token_address, strat.chain_id, strat.token_address, strat.chain_id).all() as { results: any[] };
@@ -650,8 +647,11 @@ async function scanSoloSpotStrategies(DB: any, networks: any[], env: any): Promi
       for (const pair of pairRows.results) {
         if (pairsDone >= maxPairsPerStrat) break;
         const rawPartner = pair.partner as string;
-        if (!isPolToken(rawPartner)) continue; // main token is POL; skip non-POL partners
-        const pairToken = polSideForPartner(rawPartner);
+        // Skip degenerate legs: the strategy token itself, or POL↔POL "round trips"
+        // (pathToken maps native POL to WPOL, so WPOL↔native POL quotes WPOL→WPOL and can never profit).
+        if ((rawPartner || '').toLowerCase() === (strat.token_address || '').toLowerCase()) continue;
+        if (isPolToken(rawPartner) && isPolToken(strat.token_address)) continue;
+        const pairToken = rawPartner;
         let bestProfit = 0;
         let bestBuyRouter = '';
         let bestSellRouter = '';
@@ -1044,7 +1044,10 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
       }
       let triInserted = 0;
       if (routers.results.length > 0 && !skipTri) {
-        triInserted = await scanTriangularArb(DB, _rpcUrl, net.chain_id, shardPairs, routers.results, 3000, shard, totalShards, env, scanCostBufferPct);
+        // Feed the FULL token_pairs edge list (not just polPairs): a triangle needs edges A-B, B-C, C-A,
+        // and every polPairs entry contains WPOL, so no triangle can exist inside it. The POL-focus rule
+        // ("one leg must be native POL or WPOL") is enforced inside scanTriangularArb.
+        triInserted = await scanTriangularArb(DB, _rpcUrl, net.chain_id, pairs.results, routers.results, 3000, shard, totalShards, env, scanCostBufferPct);
       }
       console.log(`[scanner] chain=${net.chain_id} cross_dex=${inserted} triangular=${triInserted} work=${workDone} (shard ${shard}/${totalShards})`);
     } catch (e) { console.error('[scanner] scan failed:', e); }
