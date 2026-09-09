@@ -3,9 +3,10 @@ import { initDB } from './db';
 import { executeOpportunity, executeSpotBuy, executeSpotSell, executeSoloSpotFromOpp, executeMMRebalance, executeTriangularArb, TradeResult } from './bot-engine';
 import { logScanResult, logTradeReceipt } from './bot-engine';
 import { getWorkingRpcUrl, getHealthyRpcPool, getProvider403Blocked, logError } from '../../shared/rpc-pool';
-import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
+import { rawQuoteRoute, rawQuoteRouteAmount, rawEthCall, getTokenDecimals, V2_GET_AMOUNTS_OUT, DEFAULT_AMOUNT_IN } from '../../shared/quotes';
 import { isPolToken, POL_NATIVE, POL_WRAPPED } from '../../shared/aggregator';
 import { scanBrtQuote } from './brt-quote';
+import { ethers } from 'ethers';
 
 async function hashApiKey(apiKey: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(apiKey);
@@ -229,15 +230,25 @@ async function scanAndExecuteChain(env: Env, chainId: number): Promise<{ inserte
           let bestRouter = v2Routers[0];
           for (const router of v2Routers) {
             const rpcBase = workingRpcs[rpcIdx % workingRpcs.length];
-            // Chain the quotes: each leg's output feeds the next leg's input (1e18 raw of tA → tB → tC → tA).
-            // qCA and DEFAULT_AMOUNT_IN are both in tA raw units, so decimals cancel — no per-token scaling needed.
-            const qAB = await rawQuoteRoute(rpcBase, tA, tB, router, feeTier, env);
-            if (!qAB || qAB === 0n) continue;
-            const qBC = await rawQuoteRouteAmount(rpcBase, tB, tC, router, feeTier, qAB, env);
-            if (!qBC || qBC === 0n) continue;
-            const qCA = await rawQuoteRouteAmount(rpcBase, tC, tA, router, feeTier, qBC, env);
-            if (!qCA || qCA === 0n) continue;
-            const profitPct = Number((qCA - DEFAULT_AMOUNT_IN) * 10000n / DEFAULT_AMOUNT_IN) / 100;
+            const [dA, dB, dC] = await Promise.all([
+              getTokenDecimals(rpcBase, tA, chainId, env),
+              getTokenDecimals(rpcBase, tB, chainId, env),
+              getTokenDecimals(rpcBase, tC, chainId, env),
+            ]);
+            const qInAB = ethers.parseUnits('0.1', dA);
+            const qInBC = ethers.parseUnits('0.1', dB);
+            const qInCA = ethers.parseUnits('0.1', dC);
+            const [qAB, qBC, qCA] = await Promise.all([
+              rawQuoteRouteAmount(rpcBase, tA, tB, router, feeTier, qInAB, env),
+              rawQuoteRouteAmount(rpcBase, tB, tC, router, feeTier, qInBC, env),
+              rawQuoteRouteAmount(rpcBase, tC, tA, router, feeTier, qInCA, env),
+            ]);
+            if (!qAB || qAB === 0n || !qBC || qBC === 0n || !qCA || qCA === 0n) continue;
+            const amountIn = ethers.parseUnits('1', dA);
+            const step2 = qAB * amountIn / qInAB;
+            const step3 = qBC * step2 / qInBC;
+            const step4 = qCA * step3 / qInCA;
+            const profitPct = Number((step4 - amountIn) * 10000n / amountIn) / 100;
             if (profitPct > bestProfit) {
               bestProfit = profitPct;
               bestRouter = router;
