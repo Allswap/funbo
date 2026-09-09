@@ -79,6 +79,9 @@ app.post('/api/bot/run', async (c) => {
 app.post('/api/cron/execute', async (c) => {
   // cron-job.org hits every 5 min (GH also every 30m as fallback) — no dedup so pending before 1h stale are caught. See funbo-crons-compare.md.
   c.executionCtx.waitUntil((async () => {
+    const DB = c.env['funbo-db'];
+    const now = Math.floor(Date.now() / 1000);
+    await DB.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?`).bind('last_cron:execute', String(now), String(now)).run();
     const result = await executePendingOpportunities(c.env);
     console.log(`[executor] cron execute: ${result.executed} executed`);
   })());
