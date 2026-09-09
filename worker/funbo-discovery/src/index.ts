@@ -956,26 +956,22 @@ async function scanTriangularArb(
         let routerDone = 0;
         for (const router of routers) {
           if (routerDone >= maxRoutersPerTriangle) break;
+          const cfgAmt = env ? await DB.prepare('SELECT value FROM config WHERE key = "trade_amount"').first() : null;
+          const scanTradeAmt = cfgAmt ? parseFloat(cfgAmt.value) : 0.1;
           const [dA, dB, dC] = await Promise.all([
             getTokenDecimals(rpcUrl, A, chainId, env),
             getTokenDecimals(rpcUrl, B, chainId, env),
             getTokenDecimals(rpcUrl, C, chainId, env),
           ]);
-          const qInAB = ethers.parseUnits('0.1', dA);
-          const qInBC = ethers.parseUnits('0.1', dB);
-          const qInCA = ethers.parseUnits('0.1', dC);
-          const [qAB, qBC, qCA] = await Promise.all([
-            rawQuoteRouteAmount(rpcUrl, A, B, router, feeTier, qInAB, env),
-            rawQuoteRouteAmount(rpcUrl, B, C, router, feeTier, qInBC, env),
-            rawQuoteRouteAmount(rpcUrl, C, A, router, feeTier, qInCA, env),
-          ]);
-          if (!qAB || !qBC || !qCA || qAB === 0n || qBC === 0n || qCA === 0n) continue;
-          const amountIn = ethers.parseUnits('1', dA);
-          const step2 = qAB * amountIn / qInAB;
-          const step3 = qBC * step2 / qInBC;
-          const step4 = qCA * step3 / qInCA;
-          if (step4 > amountIn) {
-            const profitPct = Number((step4 - amountIn) * 10000n / amountIn) / 100;
+          const amountIn = ethers.parseUnits(String(scanTradeAmt), dA);
+          const qAB = await rawQuoteRouteAmount(rpcUrl, A, B, router, feeTier, amountIn, env);
+          if (!qAB || qAB === 0n) continue;
+          const qBC = await rawQuoteRouteAmount(rpcUrl, B, C, router, feeTier, qAB, env);
+          if (!qBC || qBC === 0n) continue;
+          const qCA = await rawQuoteRouteAmount(rpcUrl, C, A, router, feeTier, qBC, env);
+          if (!qCA || qCA === 0n) continue;
+          if (qCA > amountIn) {
+            const profitPct = Number((qCA - amountIn) * 10000n / amountIn) / 100;
             // Cost-aware: triangle must clear spread + cost buffer (slippage 1% + fees + gas)
             const effectiveMin = minProfitPctTriangular + costBufferPct;
             if (profitPct >= effectiveMin) {
