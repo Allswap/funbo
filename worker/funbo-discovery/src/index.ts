@@ -1112,10 +1112,11 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
     try {
       const _rpcUrl = await getWorkingRpcUrl(env, net.chain_id, net.rpc_url);
       if (!_rpcUrl) continue;
-      const cfg = await DB.prepare('SELECT key, value FROM config WHERE key IN ("min_profit_pct","min_profit_pct_cross_dex","min_profit_pct_triangular")').all() as { results: { key: string; value: string }[] };
+      const cfg = await DB.prepare('SELECT key, value FROM config WHERE key IN ("min_profit_pct","min_profit_pct_cross_dex","min_profit_pct_triangular","trade_amount")').all() as { results: { key: string; value: string }[] };
       const cfgMap = Object.fromEntries(cfg.results.map((r: any) => [r.key, r.value]));
       const minProfitPctCrossDex = parseFloat(cfgMap.min_profit_pct_cross_dex || cfgMap.min_profit_pct || '0.5');
       const minProfitPctTriangular = parseFloat(cfgMap.min_profit_pct_triangular || cfgMap.min_profit_pct || '0.5');
+      const scanTradeAmt = parseFloat(cfgMap.trade_amount || '1.0');
       let inserted = 0;
       let workDone = 0;
 
@@ -1126,9 +1127,11 @@ async function runScanCycle(DB: any, networks: any[], env: any, skipTriangular =
 
         for (let i = 0; i < routers.results.length && routerPairsDone < maxRouterPairsPerPair; i++) {
           for (let j = i + 1; j < routers.results.length && routerPairsDone < maxRouterPairsPerPair; j++) {
+            const dA = await getTokenDecimals(_rpcUrl, pair.token_a, env);
+            const scanAmountIn = ethers.parseUnits(String(scanTradeAmt), dA);
             const [quoteA, quoteB] = await Promise.all([
-              rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, routers.results[i], 3000, env),
-              rawQuoteRoute(_rpcUrl, pair.token_a, pair.token_b, routers.results[j], 3000, env),
+              rawQuoteRouteAmount(_rpcUrl, pair.token_a, pair.token_b, routers.results[i], 3000, scanAmountIn, env),
+              rawQuoteRouteAmount(_rpcUrl, pair.token_a, pair.token_b, routers.results[j], 3000, scanAmountIn, env),
             ]);
             if (!quoteA || !quoteB || quoteA === 0n || quoteB === 0n) continue;
             const bestOut = quoteA > quoteB ? quoteA : quoteB;
