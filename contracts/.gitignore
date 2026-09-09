@@ -1,0 +1,21 @@
+# Foundry
+cache/
+out/
+artifacts/
+*.log
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+lib/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

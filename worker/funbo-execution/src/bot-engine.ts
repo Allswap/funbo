@@ -2475,3 +2475,26 @@ export async function executeMMRebalance(
 }
 
 
+
+// Flash loan arb contract on Polygon
+const FLASH_LOAN_ARB = '0x0000000000000000000000000000000000000000'; // Set after deployment
+
+export async function tryFlashLoanArb(
+  env: Env, network: NetworkConfig, tokenBorrow: string, amount: string,
+  tokenSwap: string, routerBuy: string, routerSell: string, minProfit: string
+): Promise<{ success: boolean; txHash: string | null; errorMsg: string | null }> {
+  const { provider } = await getWorkingProvider(env, network.rpc_url, '', null, network.chain_id);
+  const wallet = new ethers.Wallet(env.PRIVATE_KEY!, provider);
+  if (FLASH_LOAN_ARB === '0x0000000000000000000000000000000000000000') return { success: false, txHash: null, errorMsg: 'FlashLoanArb not deployed' };
+  const fla = new ethers.Contract(FLASH_LOAN_ARB, ['function executeFlashLoan(address tokenBorrow, uint256 amount, address tokenSwap, address routerBuy, address routerSell, uint256 minProfit) external'], wallet);
+  try {
+    const amountWei = ethers.parseUnits(amount, 18);
+    const minProfitWei = ethers.parseUnits(minProfit, 18);
+    const tx = await fla.executeFlashLoan(tokenBorrow, amountWei, tokenSwap, routerBuy, routerSell, minProfitWei, { gasLimit: 500000 });
+    console.log(`[flashloan] tx=${tx.hash} borrow=${amount} tokenBorrow=${tokenBorrow}`);
+    await waitTx(tx, 1, 60000);
+    return { success: true, txHash: tx.hash, errorMsg: null };
+  } catch (e: any) {
+    return { success: false, txHash: null, errorMsg: e.reason || e.message || 'Flash loan failed' };
+  }
+}
