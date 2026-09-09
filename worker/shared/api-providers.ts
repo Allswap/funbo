@@ -37,6 +37,7 @@ export const WELL_KNOWN_TOKENS: Record<number, Set<string>> = {
     '0x7fb688ccf682d58f86d7e38e03f9d22e7705448f', // SWAMP
     '0xeb51d9a39ad5eef215dc0bf39a8821ff804a0f1', // GAME
     '0xf854225caaef5a722884a68a23215dfa5386751e', // FISH
+    '0xecb4cac0c9e5cbd42a9ed36467ce8f96072ad58b', // BroilerPuls
   ]),
   1: new Set([
     '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
