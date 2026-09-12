@@ -1204,8 +1204,8 @@ export async function executeOpportunity(
   // Flash loan path for cross_dex and triangular: borrow → buy → sell → repay in one atomic tx
   if (strategy === 'cross_dex' || strategy === 'triangular') {
     try {
-      // minProfit: absolute POL floor — must cover Aave premium (0.05%) + gas (~0.03 POL)
-      const minProfitAbs = '0.05';
+      // minProfit: absolute POL floor — must cover gas (~0.13) + Aave premium (0.05%) + buffer
+      const minProfitAbs = '0.15';
       const flashResult = await tryFlashLoanArb(
         env, network, tokenA, tradeAmount, tokenB,
         buyRouter.address, sellRouter.address, minProfitAbs
