@@ -1204,9 +1204,11 @@ export async function executeOpportunity(
   // Flash loan path for cross_dex and triangular: borrow → buy → sell → repay in one atomic tx
   if (strategy === 'cross_dex' || strategy === 'triangular') {
     try {
+      // minProfit: convert percentage to absolute wei (e.g. 0.35% of 1.0 POL = 0.0035 POL)
+      const minProfitAbs = (parseFloat(tradeAmount) * netProfitPct / 100).toFixed(6);
       const flashResult = await tryFlashLoanArb(
         env, network, tokenA, tradeAmount, tokenB,
-        buyRouter.address, sellRouter.address, String(netProfitPct.toFixed(2))
+        buyRouter.address, sellRouter.address, minProfitAbs
       );
       if (flashResult.success) {
         console.log(`[executor] opp #${opp.id} flash loan SUCCESS tx=${flashResult.txHash}`);
